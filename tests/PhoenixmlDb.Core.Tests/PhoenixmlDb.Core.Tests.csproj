@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PhoenixmlDb.Core.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PhoenixmlDb.Core/PhoenixmlDb.Core.csproj" />
+    <ProjectReference Include="../PhoenixmlDb.TestUtilities/PhoenixmlDb.TestUtilities.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Enable multi-targeting for mobile platforms -->
+    <MobileCompatible>true</MobileCompatible>
+    <RootNamespace>PhoenixmlDb.Core</RootNamespace>
+    <Description>Core abstractions and interfaces for PhoenixmlDb document database</Description>
+    <PackageTags>xml;json;database;xquery;embedded;ios;android;mobile;maui</PackageTags>
+  </PropertyGroup>
+
+</Project>
