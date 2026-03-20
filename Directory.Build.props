@@ -14,9 +14,14 @@
   <PropertyGroup>
     <Authors>Endpoint Systems</Authors>
     <Company>Endpoint Systems</Company>
-    <Product>XmlDb</Product>
+    <Product>PhoenixmlDb</Product>
     <Copyright>Copyright © Endpoint Systems 2026. All rights reserved.</Copyright>
     <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/phoenixmldb/phoenixmldb-core</RepositoryUrl>
+    <PackageProjectUrl>https://phoenixml.dev</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageIcon>icon.png</PackageIcon>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
