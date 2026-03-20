@@ -3,20 +3,33 @@ using PhoenixmlDb.Core;
 namespace PhoenixmlDb.Xdm.Nodes;
 
 /// <summary>
-/// Represents an in-scope namespace binding on an element.
-/// These are typically not stored separately but computed from element declarations.
+/// Represents a namespace node in the XDM tree, corresponding to an in-scope namespace
+/// binding on an element.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Namespace nodes are rarely accessed directly in application code. They represent the
+/// in-scope namespace bindings that the XDM specification requires on each element. In most
+/// cases, namespace information is accessed through <see cref="XdmElement.NamespaceDeclarations"/>
+/// or the <see cref="XdmElement.Namespace"/> property instead.
+/// </para>
+/// <para>
+/// The <see cref="XdmNode.NodeName"/> of a namespace node uses the prefix as the local name
+/// (with no namespace URI). The <see cref="XdmNode.StringValue"/> is the namespace URI itself.
+/// The default namespace uses an empty string as the <see cref="Prefix"/>.
+/// </para>
+/// </remarks>
 public sealed class XdmNamespace : XdmNode
 {
     public override XdmNodeKind NodeKind => XdmNodeKind.Namespace;
 
     /// <summary>
-    /// The namespace prefix (empty string for default namespace).
+    /// The namespace prefix, or an empty string for the default namespace.
     /// </summary>
     public required string Prefix { get; init; }
 
     /// <summary>
-    /// The namespace URI.
+    /// The namespace URI that this prefix is bound to.
     /// </summary>
     public required string Uri { get; init; }
 

@@ -4,8 +4,21 @@ using PhoenixmlDb.Core;
 namespace PhoenixmlDb.Xdm;
 
 /// <summary>
-/// Represents an expanded QName (namespace URI + local name).
+/// Represents an expanded QName (namespace URI + local name + optional prefix), as used
+/// throughout the XDM for node names, type names, and function names.
 /// </summary>
+/// <remarks>
+/// <para>
+/// A QName uniquely identifies an XML name via its <see cref="Namespace"/> and
+/// <see cref="LocalName"/>. The <see cref="Prefix"/> is preserved for serialization
+/// fidelity but is <em>not</em> significant for equality — two QNames with the same
+/// namespace and local name are equal regardless of prefix.
+/// </para>
+/// <para>
+/// The namespace is stored as an interned <see cref="NamespaceId"/> for efficient comparison.
+/// Use <see cref="Local"/> to create QNames with no namespace.
+/// </para>
+/// </remarks>
 public readonly record struct XdmQName
 {
     public NamespaceId Namespace { get; }
@@ -39,8 +52,20 @@ public readonly record struct XdmQName
 }
 
 /// <summary>
-/// Represents a type name (for type annotations).
+/// Represents an XSD type name used for type annotations on elements and attributes.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Type annotations indicate the XSD type of a node's content. For unvalidated documents,
+/// elements are annotated with <see cref="Untyped"/> and attributes with
+/// <see cref="UntypedAtomic"/>. After schema validation, annotations reflect the
+/// declared types from the schema.
+/// </para>
+/// <para>
+/// Common type names are available as static properties (e.g., <see cref="XsString"/>,
+/// <see cref="XsInteger"/>, <see cref="Boolean"/>) to avoid repeated allocation.
+/// </para>
+/// </remarks>
 public readonly record struct XdmTypeName
 {
     public NamespaceId Namespace { get; }
@@ -113,6 +138,14 @@ public readonly record struct XdmTypeName
 }
 
 /// <summary>
-/// A namespace prefix binding.
+/// A namespace prefix-to-URI binding, representing a single <c>xmlns:prefix="uri"</c>
+/// declaration on an element.
 /// </summary>
+/// <remarks>
+/// Used in <see cref="Nodes.XdmElement.NamespaceDeclarations"/> to track which namespace
+/// prefixes are declared on each element. The default namespace uses an empty string
+/// for <paramref name="Prefix"/>.
+/// </remarks>
+/// <param name="Prefix">The namespace prefix, or an empty string for the default namespace.</param>
+/// <param name="Namespace">The interned namespace URI that the prefix is bound to.</param>
 public readonly record struct NamespaceBinding(string Prefix, NamespaceId Namespace);

@@ -4,9 +4,29 @@ using System.Globalization;
 namespace PhoenixmlDb.Xdm;
 
 /// <summary>
-/// Represents an xs:yearMonthDuration value as a count of months.
-/// Unlike TimeSpan, this correctly supports month-based date arithmetic.
+/// Represents an <c>xs:yearMonthDuration</c> value as a count of months, implementing
+/// correct XML Schema semantics for month-based date arithmetic.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Unlike <see cref="TimeSpan"/>, which only supports fixed-length durations, this type
+/// correctly handles variable-length months. For example, adding 1 month to January 31
+/// yields February 28/29, which cannot be expressed as a fixed number of days.
+/// </para>
+/// <para>
+/// The canonical lexical form is <c>PnYnM</c> (e.g., <c>P1Y6M</c> for 18 months).
+/// Negative durations are prefixed with <c>-</c> (e.g., <c>-P3M</c>).
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// var dur = YearMonthDuration.Parse("P1Y6M");
+/// Console.WriteLine(dur.TotalMonths); // 18
+/// Console.WriteLine(dur.Years);       // 1
+/// Console.WriteLine(dur.Months);      // 6
+/// </code>
+/// </example>
+/// <param name="TotalMonths">The total number of months (negative for negative durations).</param>
 public readonly record struct YearMonthDuration(int TotalMonths) : IComparable<YearMonthDuration>
 {
     public int Years => TotalMonths / 12;
@@ -79,9 +99,21 @@ public readonly record struct YearMonthDuration(int TotalMonths) : IComparable<Y
 }
 
 /// <summary>
-/// Represents an xs:dayTimeDuration value as total seconds (decimal).
-/// Unlike TimeSpan, this handles arbitrarily large durations (e.g., P1234567890D).
+/// Represents an <c>xs:dayTimeDuration</c> value as a total seconds count using
+/// <see cref="decimal"/> precision, supporting arbitrarily large durations.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Unlike <see cref="TimeSpan"/>, which is limited to approximately ±10,000 days and
+/// 100-nanosecond tick precision, this type uses <see cref="decimal"/> for the total seconds
+/// count. This allows representation of durations like <c>P1234567890D</c> without overflow.
+/// </para>
+/// <para>
+/// The canonical lexical form is <c>PnDTnHnMnS</c> (e.g., <c>P2DT3H30M</c> for 2 days,
+/// 3 hours, and 30 minutes). Fractional seconds are supported.
+/// </para>
+/// </remarks>
+/// <param name="TotalSeconds">The total seconds as a <see cref="decimal"/> (negative for negative durations).</param>
 public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparable<DayTimeDuration>
 {
     public long Days => (long)(TotalSeconds / 86400m);
@@ -212,9 +244,25 @@ public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparabl
 }
 
 /// <summary>
-/// Represents an xs:duration value with both month and day-time components.
-/// Unlike TimeSpan (which only has day-time), this preserves the year/month facets.
+/// Represents an <c>xs:duration</c> value with both month and day-time components,
+/// preserving the full XSD duration semantics that <see cref="TimeSpan"/> cannot.
 /// </summary>
+/// <remarks>
+/// <para>
+/// XSD durations have two independent components: a month count and a day-time span.
+/// These cannot be combined into a single time value because the number of days in a month
+/// varies. The <see cref="TotalMonths"/> and <see cref="DayTime"/> components are stored
+/// separately to preserve this distinction.
+/// </para>
+/// <para>
+/// <b>Comparison:</b> Durations are partially ordered — two durations with different
+/// month and day-time ratios may be incomparable. This implementation compares months
+/// first, then day-time, which is correct for durations that have the same ratio but may
+/// give unexpected results for mixed durations.
+/// </para>
+/// </remarks>
+/// <param name="TotalMonths">The month component (may be negative).</param>
+/// <param name="DayTime">The day-time component as a <see cref="TimeSpan"/>.</param>
 public readonly record struct XsDuration(int TotalMonths, TimeSpan DayTime) : IComparable<XsDuration>
 {
     public int Years => Math.Abs(TotalMonths) / 12;
@@ -325,9 +373,22 @@ public readonly record struct XsDuration(int TotalMonths, TimeSpan DayTime) : IC
 }
 
 /// <summary>
-/// Wrapper type for xs:untypedAtomic values, distinguishing them from xs:string.
-/// Implements IConvertible so it can participate in arithmetic and comparisons.
+/// Wrapper type for <c>xs:untypedAtomic</c> values, distinguishing them from <c>xs:string</c>
+/// at the CLR type level.
 /// </summary>
+/// <remarks>
+/// <para>
+/// In XPath/XQuery, <c>xs:untypedAtomic</c> values are implicitly cast to the required type
+/// during comparisons and arithmetic (e.g., cast to <c>xs:double</c> for numeric operations,
+/// or to <c>xs:string</c> for string operations). This is different from <c>xs:string</c>,
+/// which requires explicit casting to numeric types.
+/// </para>
+/// <para>
+/// Implements <see cref="IConvertible"/> so that .NET's built-in conversion infrastructure
+/// can perform these implicit casts, delegating to the underlying string value.
+/// </para>
+/// </remarks>
+/// <param name="Value">The lexical string representation of the untyped value.</param>
 public readonly record struct XsUntypedAtomic(string Value) : IConvertible
 {
     public override string ToString() => Value;
@@ -353,9 +414,20 @@ public readonly record struct XsUntypedAtomic(string Value) : IConvertible
 }
 
 /// <summary>
-/// Wrapper type for xs:anyURI values.
-/// Implements IConvertible so it can participate in string operations.
+/// Wrapper type for <c>xs:anyURI</c> values, distinguishing them from plain strings
+/// at the CLR type level.
 /// </summary>
+/// <remarks>
+/// <para>
+/// In XPath/XQuery, <c>xs:anyURI</c> values are promotable to <c>xs:string</c> — they
+/// can be used anywhere a string is expected. This wrapper preserves the type distinction
+/// so that type-aware operations (e.g., <c>instance of xs:anyURI</c>) work correctly.
+/// </para>
+/// <para>
+/// Implements <see cref="IConvertible"/> to enable seamless participation in string operations.
+/// </para>
+/// </remarks>
+/// <param name="Value">The URI string value.</param>
 public readonly record struct XsAnyUri(string Value) : IConvertible
 {
     public override string ToString() => Value;
@@ -381,9 +453,27 @@ public readonly record struct XsAnyUri(string Value) : IConvertible
 }
 
 /// <summary>
-/// Represents an xs:dateTime value with explicit timezone tracking.
-/// Unlike DateTimeOffset, this distinguishes "no timezone" from UTC.
+/// Represents an <c>xs:dateTime</c> value with explicit timezone tracking and support for
+/// extended years outside the .NET <see cref="DateTimeOffset"/> range.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Unlike <see cref="DateTimeOffset"/>, this type distinguishes between "no timezone"
+/// and "UTC timezone" (<c>Z</c>). In XML Schema, <c>2024-01-15T10:00:00</c> (no timezone)
+/// and <c>2024-01-15T10:00:00Z</c> (UTC) are semantically different — the former uses the
+/// implicit timezone for comparisons, while the latter is explicitly UTC.
+/// </para>
+/// <para>
+/// <b>Extended years:</b> XML Schema allows years outside the 1-9999 range (including year 0
+/// and negative years in the proleptic Gregorian calendar). When <see cref="ExtendedYear"/>
+/// is non-null, it holds the true year while <see cref="Value"/>'s year is clamped to a valid
+/// .NET range for time-of-day storage.
+/// </para>
+/// <para>
+/// <b>Comparison:</b> Follows the XPath Functions and Operators specification. Values with
+/// timezones are normalized to UTC; values without timezones use the implicit (system) timezone.
+/// </para>
+/// </remarks>
 public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone) : IComparable<XsDateTime>
 {
     /// <summary>
@@ -682,9 +772,20 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
 }
 
 /// <summary>
-/// Represents an xs:date value with optional timezone.
-/// Unlike DateOnly, this preserves timezone offset information.
+/// Represents an <c>xs:date</c> value with optional timezone and support for extended years.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Unlike <see cref="DateOnly"/>, this type preserves timezone offset information and
+/// distinguishes between "no timezone" (<see cref="Timezone"/> is <c>null</c>) and a
+/// specific timezone offset. This distinction matters for XPath date comparisons and
+/// timezone-related functions like <c>fn:adjust-date-to-timezone()</c>.
+/// </para>
+/// <para>
+/// <b>Extended years:</b> Supports years outside the .NET 1-9999 range, including year 0
+/// and negative years in the proleptic Gregorian calendar. See <see cref="ExtendedYear"/>.
+/// </para>
+/// </remarks>
 public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : IComparable<XsDate>
 {
     /// <summary>
@@ -869,9 +970,24 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
 }
 
 /// <summary>
-/// Represents an xs:time value with optional timezone and fractional seconds.
-/// Unlike TimeOnly, this preserves timezone offset information.
+/// Represents an <c>xs:time</c> value with optional timezone and sub-second precision.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Unlike <see cref="TimeOnly"/>, this type preserves timezone offset information and
+/// fractional seconds beyond tick precision. The <see cref="Timezone"/> property distinguishes
+/// "no timezone" (<c>null</c>) from UTC (<see cref="TimeSpan.Zero"/>), which is significant
+/// for XPath time comparisons and timezone adjustment functions.
+/// </para>
+/// <para>
+/// <b>Comparison:</b> Times are compared by normalizing to UTC. When no timezone is present,
+/// the system's implicit timezone is used, per the XPath Functions and Operators specification.
+/// </para>
+/// <para>
+/// <b>24:00:00:</b> The XML Schema value <c>24:00:00</c> (end of day) is normalized to
+/// <c>00:00:00</c> during parsing, since <see cref="TimeOnly"/> does not support hour 24.
+/// </para>
+/// </remarks>
 public readonly record struct XsTime(TimeOnly Time, TimeSpan? Timezone, int FractionalTicks) : IComparable<XsTime>
 {
     public static bool operator <(XsTime left, XsTime right) => left.CompareTo(right) < 0;
@@ -943,39 +1059,92 @@ public readonly record struct XsTime(TimeOnly Time, TimeSpan? Timezone, int Frac
     }
 }
 
-/// <summary>XSD xs:gYearMonth value (e.g. "2005-10").</summary>
+/// <summary>
+/// Represents an <c>xs:gYearMonth</c> value (e.g., <c>2005-10</c>), stored as its lexical form.
+/// </summary>
+/// <remarks>
+/// Part of the XML Schema Gregorian date family. These partial-date types are used in
+/// XPath/XQuery for recurring date patterns (e.g., "every October").
+/// </remarks>
+/// <param name="Value">The lexical representation (e.g., <c>"2005-10"</c> or <c>"2005-10Z"</c>).</param>
 public readonly record struct XsGYearMonth(string Value)
 {
     public override string ToString() => Value;
 }
 
-/// <summary>XSD xs:gYear value (e.g. "2005").</summary>
+/// <summary>
+/// Represents an <c>xs:gYear</c> value (e.g., <c>2005</c>), stored as its lexical form.
+/// </summary>
+/// <param name="Value">The lexical representation (e.g., <c>"2005"</c> or <c>"-0044"</c>).</param>
 public readonly record struct XsGYear(string Value)
 {
     public override string ToString() => Value;
 }
 
-/// <summary>XSD xs:gMonthDay value (e.g. "--12-25").</summary>
+/// <summary>
+/// Represents an <c>xs:gMonthDay</c> value (e.g., <c>--12-25</c>), stored as its lexical form.
+/// </summary>
+/// <param name="Value">The lexical representation (e.g., <c>"--12-25"</c>).</param>
 public readonly record struct XsGMonthDay(string Value)
 {
     public override string ToString() => Value;
 }
 
-/// <summary>XSD xs:gDay value (e.g. "---25").</summary>
+/// <summary>
+/// Represents an <c>xs:gDay</c> value (e.g., <c>---25</c>), stored as its lexical form.
+/// </summary>
+/// <param name="Value">The lexical representation (e.g., <c>"---25"</c>).</param>
 public readonly record struct XsGDay(string Value)
 {
     public override string ToString() => Value;
 }
 
-/// <summary>XSD xs:gMonth value (e.g. "--12").</summary>
+/// <summary>
+/// Represents an <c>xs:gMonth</c> value (e.g., <c>--12</c>), stored as its lexical form.
+/// </summary>
+/// <param name="Value">The lexical representation (e.g., <c>"--12"</c>).</param>
 public readonly record struct XsGMonth(string Value)
 {
     public override string ToString() => Value;
 }
 
 /// <summary>
-/// Represents an XDM atomic value.
+/// Represents an XDM atomic value — a typed, immutable value from the XPath/XQuery type system.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <c>XdmValue</c> pairs a CLR value (boxed in <see cref="RawValue"/>) with an
+/// <see cref="XdmType"/> tag that identifies its XSD type. This enables type-aware
+/// operations such as comparisons, arithmetic, and casting as defined by the XPath/XQuery
+/// Functions and Operators specification.
+/// </para>
+/// <para>
+/// <b>Construction:</b> Use the static factory methods (<see cref="UntypedAtomic"/>,
+/// <see cref="XsString"/>, <see cref="XsInteger"/>, <see cref="Boolean"/>, etc.) to create
+/// values. These ensure the correct <see cref="XdmType"/> tag is applied.
+/// </para>
+/// <para>
+/// <b>Access:</b> Use the typed accessor methods (<see cref="AsString"/>, <see cref="AsLong"/>,
+/// <see cref="AsDouble"/>, <see cref="AsBoolean"/>, etc.) to extract the value. These perform
+/// type coercion following XPath casting rules and throw <see cref="InvalidCastException"/>
+/// for incompatible types.
+/// </para>
+/// <para>
+/// <b>Equality:</b> Two values are equal if and only if they have the same <see cref="Type"/>
+/// and the same underlying value.
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// var price = XdmValue.XsDecimal(19.99m);
+/// var name = XdmValue.XsString("Widget");
+/// var active = XdmValue.Boolean(true);
+///
+/// Console.WriteLine(price.AsDecimal()); // 19.99
+/// Console.WriteLine(name.AsString());   // Widget
+/// Console.WriteLine(active.AsBoolean()); // True
+/// </code>
+/// </example>
 public readonly struct XdmValue : IEquatable<XdmValue>
 {
     private readonly object? _value;

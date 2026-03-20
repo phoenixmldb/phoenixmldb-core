@@ -9,8 +9,44 @@ using PhoenixmlDb.Xdm.Nodes;
 namespace PhoenixmlDb.Xdm.Parsing;
 
 /// <summary>
-/// Parses XML content into XDM nodes.
+/// Parses XML content (strings, streams, or readers) into an XDM node tree.
 /// </summary>
+/// <remarks>
+/// <para>
+/// This is the primary mechanism for converting XML text into the in-memory XDM
+/// representation used throughout PhoenixmlDb. The parser produces a <see cref="ParseResult"/>
+/// containing the <see cref="XdmDocument"/> root node and a flat list of all nodes in
+/// document order.
+/// </para>
+/// <para>
+/// <b>Node ID assignment:</b> Each node receives a unique <see cref="NodeId"/> starting from
+/// <c>startNodeId</c> and incrementing monotonically. The document node receives the first ID,
+/// followed by elements, attributes, text nodes, etc., in document order. This sequential
+/// assignment enables efficient storage and retrieval.
+/// </para>
+/// <para>
+/// <b>Namespace interning:</b> Namespace URIs are converted to <see cref="NamespaceId"/> values
+/// via the provided <c>namespaceResolver</c> function. This deduplicates namespace strings
+/// across the entire database, making namespace comparisons an integer operation.
+/// </para>
+/// <para>
+/// <b>Usage:</b> This parser is used internally by <c>PutDocumentAsync</c> when storing
+/// documents, but is also available for direct use when you need to parse XML without storing it.
+/// </para>
+/// </remarks>
+/// <example>
+/// Parsing an XML string into an XDM tree:
+/// <code>
+/// var parser = new XmlDocumentParser(
+///     documentId: new DocumentId(1),
+///     startNodeId: new NodeId(1),
+///     namespaceResolver: uri => namespaceTable.Intern(uri));
+///
+/// var result = parser.Parse("&lt;root&gt;&lt;item&gt;Hello&lt;/item&gt;&lt;/root&gt;");
+/// var doc = result.Document;
+/// Console.WriteLine($"Parsed {result.NodeCount} nodes");
+/// </code>
+/// </example>
 public sealed class XmlDocumentParser
 {
     private readonly Func<string, NamespaceId> _namespaceResolver;
@@ -20,12 +56,18 @@ public sealed class XmlDocumentParser
     private readonly bool _preserveWhitespace;
 
     /// <summary>
-    /// Creates a new XML parser.
+    /// Creates a new XML parser that will assign the specified document and node IDs.
     /// </summary>
-    /// <param name="documentId">The document ID for all nodes.</param>
-    /// <param name="startNodeId">The starting node ID.</param>
-    /// <param name="namespaceResolver">Function to resolve namespace URIs to IDs.</param>
-    /// <param name="preserveWhitespace">Whether to preserve whitespace-only text nodes.</param>
+    /// <param name="documentId">The <see cref="DocumentId"/> to assign to all parsed nodes.</param>
+    /// <param name="startNodeId">The first <see cref="NodeId"/> to assign. Subsequent nodes receive incrementing IDs.</param>
+    /// <param name="namespaceResolver">
+    /// Function that converts namespace URI strings to interned <see cref="NamespaceId"/> values.
+    /// This is typically backed by a database-wide namespace table.
+    /// </param>
+    /// <param name="preserveWhitespace">
+    /// When <c>true</c>, whitespace-only text nodes are preserved. When <c>false</c> (default),
+    /// they are discarded, matching the behavior of <c>strip-space</c> in XSLT.
+    /// </param>
     public XmlDocumentParser(
         DocumentId documentId,
         NodeId startNodeId,
@@ -39,8 +81,12 @@ public sealed class XmlDocumentParser
     }
 
     /// <summary>
-    /// Parses XML content from a string.
+    /// Parses XML content from a string into an XDM document tree.
     /// </summary>
+    /// <param name="xml">The XML content to parse. Must be well-formed XML.</param>
+    /// <param name="documentUri">Optional document URI to assign to the resulting <see cref="XdmDocument"/>.</param>
+    /// <returns>A <see cref="ParseResult"/> containing the document and all parsed nodes.</returns>
+    /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(string xml, string? documentUri = null)
     {
         using var reader = new StringReader(xml);
@@ -48,8 +94,12 @@ public sealed class XmlDocumentParser
     }
 
     /// <summary>
-    /// Parses XML content from a TextReader.
+    /// Parses XML content from a <see cref="TextReader"/> into an XDM document tree.
     /// </summary>
+    /// <param name="textReader">A reader positioned at the start of the XML content.</param>
+    /// <param name="documentUri">Optional document URI to assign to the resulting <see cref="XdmDocument"/>.</param>
+    /// <returns>A <see cref="ParseResult"/> containing the document and all parsed nodes.</returns>
+    /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(TextReader textReader, string? documentUri = null)
     {
         var settings = new XmlReaderSettings
@@ -65,8 +115,12 @@ public sealed class XmlDocumentParser
     }
 
     /// <summary>
-    /// Parses XML content from a stream.
+    /// Parses XML content from a <see cref="Stream"/> into an XDM document tree.
     /// </summary>
+    /// <param name="stream">A stream containing the XML content. The stream's encoding is auto-detected.</param>
+    /// <param name="documentUri">Optional document URI to assign to the resulting <see cref="XdmDocument"/>.</param>
+    /// <returns>A <see cref="ParseResult"/> containing the document and all parsed nodes.</returns>
+    /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(Stream stream, string? documentUri = null)
     {
         var settings = new XmlReaderSettings
@@ -314,22 +368,37 @@ public sealed class XmlDocumentParser
 }
 
 /// <summary>
-/// Result of parsing an XML document.
+/// The result of parsing an XML document via <see cref="XmlDocumentParser"/>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Contains the complete parse output: the <see cref="Document"/> root node and a flat
+/// list of <see cref="Nodes"/> in document order. The flat node list is used by the storage
+/// layer to efficiently persist all nodes in a single batch write.
+/// </para>
+/// <para>
+/// The <see cref="NodeCount"/> is provided as a convenience for pre-allocating storage.
+/// It always equals <c>Nodes.Count</c>.
+/// </para>
+/// </remarks>
 public sealed class ParseResult
 {
     /// <summary>
-    /// The document node.
+    /// The root <see cref="XdmDocument"/> node of the parsed tree.
     /// </summary>
     public required XdmDocument Document { get; init; }
 
     /// <summary>
-    /// All nodes in document order.
+    /// All parsed nodes in document order, including the document node itself.
     /// </summary>
+    /// <remarks>
+    /// The document node is at index 0, followed by elements, attributes, text nodes,
+    /// comments, and processing instructions in the order they appear in the source XML.
+    /// </remarks>
     public required IReadOnlyList<XdmNode> Nodes { get; init; }
 
     /// <summary>
-    /// Total number of nodes.
+    /// The total number of nodes in <see cref="Nodes"/>.
     /// </summary>
     public required uint NodeCount { get; init; }
 }
