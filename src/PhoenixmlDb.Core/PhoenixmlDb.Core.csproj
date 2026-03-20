@@ -1,11 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Enable multi-targeting for mobile platforms -->
     <MobileCompatible>true</MobileCompatible>
     <RootNamespace>PhoenixmlDb.Core</RootNamespace>
-    <Description>Core abstractions and interfaces for PhoenixmlDb document database</Description>
-    <PackageTags>xml;json;database;xquery;embedded;ios;android;mobile;maui</PackageTags>
+    <Description>Core types, XDM data model, and interfaces for PhoenixmlDb document database</Description>
+    <PackageTags>xml;json;database;xquery;xdm;embedded;ios;android;mobile;maui</PackageTags>
+    <NoWarn>$(NoWarn);CA1711;CA1028;CA1054;CA1056;CA1062;CA1820;CS0649</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PhoenixmlDb.Xslt" />
+  </ItemGroup>
 
 </Project>

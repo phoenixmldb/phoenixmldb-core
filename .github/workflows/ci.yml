@@ -36,16 +36,12 @@ jobs:
           echo "Version: ${VERSION}"
 
       - name: Restore
-        run: |
-          dotnet restore src/PhoenixmlDb.Core
-          dotnet restore src/PhoenixmlDb.Xdm
+        run: dotnet restore src/PhoenixmlDb.Core
 
       - name: Build
         env:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          dotnet build src/PhoenixmlDb.Core -c Release --no-restore -p:Version="$BUILD_VERSION"
-          dotnet build src/PhoenixmlDb.Xdm -c Release --no-restore -p:Version="$BUILD_VERSION"
+        run: dotnet build src/PhoenixmlDb.Core -c Release --no-restore -p:Version="$BUILD_VERSION"
 
       - name: Pack
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -53,8 +49,6 @@ jobs:
           PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           dotnet pack src/PhoenixmlDb.Core -c Release --no-build \
-            -p:PackageVersion="$PKG_VERSION" -o ./artifacts
-          dotnet pack src/PhoenixmlDb.Xdm -c Release --no-build \
             -p:PackageVersion="$PKG_VERSION" -o ./artifacts
 
       - name: Upload artifacts
