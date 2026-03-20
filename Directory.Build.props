@@ -20,8 +20,13 @@
     <RepositoryUrl>https://github.com/phoenixmldb/phoenixmldb-core</RepositoryUrl>
     <PackageProjectUrl>https://phoenixml.dev</PackageProjectUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageIcon>icon.png</PackageIcon>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugType>embedded</DebugType>
