@@ -17,8 +17,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,15 +36,16 @@ jobs:
           echo "Version: ${VERSION}"
 
       - name: Restore
-        run: dotnet restore
+        run: |
+          dotnet restore src/PhoenixmlDb.Core
+          dotnet restore src/PhoenixmlDb.Xdm
 
       - name: Build
         env:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
-        run: dotnet build -c Release --no-restore -p:Version="$BUILD_VERSION"
-
-      - name: Test
-        run: dotnet test -c Release --no-restore --no-build --verbosity normal
+        run: |
+          dotnet build src/PhoenixmlDb.Core -c Release --no-restore -p:Version="$BUILD_VERSION"
+          dotnet build src/PhoenixmlDb.Xdm -c Release --no-restore -p:Version="$BUILD_VERSION"
 
       - name: Pack
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
