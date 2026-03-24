@@ -265,36 +265,42 @@ public static class NodeSerializer
     }
 
     // Size estimation methods
+    // IMPORTANT: Use Encoding.UTF8.GetByteCount for all string sizes,
+    // not .Length (which is char count, not byte count). UTF-8 can use
+    // up to 4 bytes per character.
     private static int EstimateDocumentSize(XdmDocument doc) =>
         2 + // header
-        (doc.DocumentUri?.Length ?? 0) + 5 + // URI
+        StringByteSize(doc.DocumentUri) + 5 + // URI
         10 + // document element
         (doc.Children.Count * 10) + 5; // children
 
     private static int EstimateElementSize(XdmElement elem) =>
         2 + // header
         5 + // namespace
-        elem.LocalName.Length + 5 + // local name
-        (elem.Prefix?.Length ?? 0) + 5 + // prefix
+        StringByteSize(elem.LocalName) + 5 + // local name
+        StringByteSize(elem.Prefix) + 5 + // prefix
         10 + // parent
         (elem.Attributes.Count * 10) + 5 + // attributes
         (elem.NamespaceDeclarations.Count * 20) + 5 + // ns decls
         (elem.Children.Count * 10) + 5; // children
 
     private static int EstimateAttributeSize(XdmAttribute attr) =>
-        2 + 5 + attr.LocalName.Length + 5 + (attr.Prefix?.Length ?? 0) + 5 + 10 + attr.Value.Length + 5;
+        2 + 5 + StringByteSize(attr.LocalName) + 5 + StringByteSize(attr.Prefix) + 5 + 10 + StringByteSize(attr.Value) + 5;
 
     private static int EstimateTextSize(XdmText text) =>
-        2 + 10 + text.Value.Length + 5;
+        2 + 10 + StringByteSize(text.Value) + 5;
 
     private static int EstimateCommentSize(XdmComment comment) =>
-        2 + 10 + comment.Value.Length + 5;
+        2 + 10 + StringByteSize(comment.Value) + 5;
 
     private static int EstimatePISize(XdmProcessingInstruction pi) =>
-        2 + 10 + pi.Target.Length + 5 + pi.Value.Length + 5;
+        2 + 10 + StringByteSize(pi.Target) + 5 + StringByteSize(pi.Value) + 5;
 
     private static int EstimateNamespaceSize(XdmNamespace ns) =>
-        2 + 10 + ns.Prefix.Length + 5 + ns.Uri.Length + 5;
+        2 + 10 + StringByteSize(ns.Prefix) + 5 + StringByteSize(ns.Uri) + 5;
+
+    private static int StringByteSize(string? value) =>
+        value is null ? 0 : Encoding.UTF8.GetByteCount(value);
 
     // Helper methods
     private static int WriteVarInt(Span<byte> buffer, uint value)
