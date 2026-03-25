@@ -176,6 +176,7 @@ public sealed class XmlDocumentParser
             DocumentElement = documentElement,
             Children = documentChildren.ToImmutableArray()
         };
+        document._stringValue = ComputeStringValue(documentChildren);
 
         // Insert document at the beginning
         _nodes.Insert(0, document);
@@ -280,8 +281,33 @@ public sealed class XmlDocumentParser
             Children = children.ToImmutableArray()
         };
 
+        // Compute string value from descendant text nodes (XDM §5.7.2).
+        // This must be done at parse time because the shredded storage model
+        // doesn't give elements access to a node provider at runtime.
+        element._stringValue = ComputeStringValue(children);
+
         _nodes.Add(element);
         return nodeId;
+    }
+
+    /// <summary>
+    /// Computes the string value of an element from its children (text + nested elements).
+    /// Walks _nodes to resolve child NodeIds.
+    /// </summary>
+    private string ComputeStringValue(List<NodeId> children)
+    {
+        if (children.Count == 0) return "";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var childId in children)
+        {
+            var child = _nodes.FirstOrDefault(n => n.Id == childId);
+            if (child is XdmText text)
+                sb.Append(text.Value);
+            else if (child is XdmElement childElem)
+                sb.Append(childElem.StringValue); // Already computed (bottom-up)
+        }
+        return sb.ToString();
     }
 
     private NodeId ParseAttribute(XmlReader reader, NodeId parentId)
