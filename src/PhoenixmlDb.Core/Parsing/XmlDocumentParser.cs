@@ -178,6 +178,15 @@ public sealed class XmlDocumentParser
         };
         document._stringValue = ComputeStringValue(documentChildren);
 
+        // Set the parent of top-level children to the document node.
+        // This enables base-uri() inheritance: child → ... → document → DocumentUri.
+        foreach (var childId in documentChildren)
+        {
+            var child = _nodes.FirstOrDefault(n => n.Id == childId);
+            if (child != null)
+                child.Parent = documentNodeId;
+        }
+
         // Insert document at the beginning
         _nodes.Insert(0, document);
 
