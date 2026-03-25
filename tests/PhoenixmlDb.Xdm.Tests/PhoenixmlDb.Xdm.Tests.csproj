@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/PhoenixmlDb.Xdm/PhoenixmlDb.Xdm.csproj" />
+    <ProjectReference Include="../../src/PhoenixmlDb.Core/PhoenixmlDb.Core.csproj" />
     <ProjectReference Include="../PhoenixmlDb.TestUtilities/PhoenixmlDb.TestUtilities.csproj" />
   </ItemGroup>
 
