@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PhoenixmlDb.Xslt" />
+    <InternalsVisibleTo Include="PhoenixmlDb.XQuery" />
   </ItemGroup>
 
 </Project>
