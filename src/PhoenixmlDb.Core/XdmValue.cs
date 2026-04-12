@@ -117,9 +117,16 @@ public readonly record struct YearMonthDuration(int TotalMonths) : IComparable<Y
 public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparable<DayTimeDuration>
 {
     public long Days => (long)(TotalSeconds / 86400m);
-    public int Hours => (int)(Math.Abs(TotalSeconds) % 86400m / 3600m);
-    public int Minutes => (int)(Math.Abs(TotalSeconds) % 3600m / 60m);
-    public decimal Seconds => Math.Abs(TotalSeconds) % 60m;
+    /// <summary>Hours component with sign preserved (per XQuery F&amp;O component extraction).</summary>
+    public int Hours { get { var r = TotalSeconds % 86400m; return (int)(r / 3600m); } }
+    /// <summary>Minutes component with sign preserved.</summary>
+    public int Minutes { get { var r = TotalSeconds % 3600m; return (int)(r / 60m); } }
+    /// <summary>Seconds component with sign preserved.</summary>
+    public decimal Seconds => TotalSeconds % 60m;
+    // Absolute-value accessors for serialization (ToString)
+    internal int AbsHours => (int)(Math.Abs(TotalSeconds) % 86400m / 3600m);
+    internal int AbsMinutes => (int)(Math.Abs(TotalSeconds) % 3600m / 60m);
+    internal decimal AbsSeconds => Math.Abs(TotalSeconds) % 60m;
 
     public bool IsNegative => TotalSeconds < 0;
 
@@ -265,8 +272,8 @@ public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparabl
 /// <param name="DayTime">The day-time component as a <see cref="TimeSpan"/>.</param>
 public readonly record struct XsDuration(int TotalMonths, TimeSpan DayTime) : IComparable<XsDuration>
 {
-    public int Years => Math.Abs(TotalMonths) / 12;
-    public int Months => Math.Abs(TotalMonths) % 12;
+    public int Years => TotalMonths / 12;
+    public int Months => TotalMonths % 12;
     public bool IsNegative => TotalMonths < 0 || (TotalMonths == 0 && DayTime < TimeSpan.Zero);
 
     public static XsDuration Parse(string s)
