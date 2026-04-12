@@ -878,6 +878,18 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
             }
         }
 
+        // Validate timezone range: hours <= 14, minutes <= 59, and 14:00 max
+        if (tz.HasValue)
+        {
+            var absTz = tz.Value < TimeSpan.Zero ? -tz.Value : tz.Value;
+            if (absTz.Hours > 14 || absTz.Minutes > 59 || absTz > new TimeSpan(14, 0, 0))
+                throw new FormatException($"Invalid timezone in xs:date: '{s}'");
+        }
+
+        // Reject dateTime-like input (contains 'T')
+        if (dateStr.Contains('T', StringComparison.Ordinal))
+            throw new FormatException($"'{s}' is not a valid xs:date (contains 'T', looks like a dateTime)");
+
         // Check if this is an extended year (negative, year 0, or > 9999)
         bool isExtended = dateStr.StartsWith('-') || dateStr.StartsWith("0000", StringComparison.Ordinal);
         if (!isExtended)
@@ -1070,10 +1082,34 @@ public readonly record struct XsTime(TimeOnly Time, TimeSpan? Timezone, int Frac
             }
         }
 
+        // Validate timezone range: hours <= 14, minutes <= 59, and 14:00 max
+        if (tz.HasValue)
+        {
+            var absTz = tz.Value < TimeSpan.Zero ? -tz.Value : tz.Value;
+            if (absTz.Hours > 14 || absTz.Minutes > 59 || absTz > new TimeSpan(14, 0, 0))
+                throw new FormatException($"Invalid timezone in xs:time: '{s}'");
+        }
+
         // XSD: 24:00:00 is a valid time representing midnight (end of day)
-        // Normalize to 00:00:00 since TimeOnly doesn't support 24:00:00
+        // Only 24:00:00 or 24:00:00.0* (all zeros) is valid
         if (timeStr.StartsWith("24:00:00", StringComparison.Ordinal))
-            timeStr = "00:00:00" + timeStr[8..]; // preserve any fractional seconds
+        {
+            var rest = timeStr[8..];
+            if (rest.Length > 0)
+            {
+                // Must be .0* (decimal point followed by only zeros)
+                if (rest[0] != '.')
+                    throw new FormatException($"Invalid xs:time value: '{s}' (24:00:00 must have zero fractional seconds)");
+                for (int j = 1; j < rest.Length; j++)
+                    if (rest[j] != '0')
+                        throw new FormatException($"Invalid xs:time value: '{s}' (24:00:00 must have zero fractional seconds)");
+            }
+            timeStr = "00:00:00";
+        }
+
+        // Reject dateTime-like input (has date part before time)
+        if (timeStr.Length > 0 && timeStr[0] != '-' && timeStr.Contains('-', StringComparison.Ordinal) && char.IsDigit(timeStr[0]))
+            throw new FormatException($"'{s}' is not a valid xs:time (looks like a date or dateTime)");
 
         var time = TimeOnly.Parse(timeStr, CultureInfo.InvariantCulture);
         var fractionalTicks = (int)(time.Ticks % TimeSpan.TicksPerSecond);
