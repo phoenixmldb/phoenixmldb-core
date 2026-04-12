@@ -34,11 +34,16 @@ public readonly record struct YearMonthDuration(int TotalMonths) : IComparable<Y
 
     public static YearMonthDuration Parse(string s)
     {
+        var original = s;
         s = s.Trim();
         var negative = s.StartsWith('-');
         if (negative) s = s[1..];
-        if (!s.StartsWith('P')) throw new FormatException($"Invalid yearMonthDuration: {s}");
+        if (!s.StartsWith('P')) throw new FormatException($"Invalid yearMonthDuration: {original}");
         s = s[1..]; // skip 'P'
+
+        // "P" alone is invalid
+        if (s.Length == 0)
+            throw new FormatException($"Invalid yearMonthDuration: {original}");
 
         // xs:yearMonthDuration must not have day/time components
         if (s.Contains('D', StringComparison.Ordinal) || s.Contains('T', StringComparison.Ordinal))
@@ -137,11 +142,16 @@ public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparabl
 
     public static DayTimeDuration Parse(string s)
     {
+        var original = s;
         s = s.Trim();
         var negative = s.StartsWith('-');
         if (negative) s = s[1..];
-        if (!s.StartsWith('P')) throw new FormatException($"Invalid dayTimeDuration: {s}");
+        if (!s.StartsWith('P')) throw new FormatException($"Invalid dayTimeDuration: {original}");
         s = s[1..]; // skip P
+
+        // "P" or "-P" with nothing after is invalid
+        if (s.Length == 0)
+            throw new FormatException($"Invalid dayTimeDuration: {original}");
 
         // Must not have year/month components
         var tIdx = s.IndexOf('T', StringComparison.Ordinal);
@@ -151,13 +161,23 @@ public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparabl
         if (datePart.Contains('Y', StringComparison.Ordinal) || datePart.Contains('M', StringComparison.Ordinal))
             throw new FormatException($"Invalid dayTimeDuration: contains year/month components");
 
+        // T must be followed by time components
+        if (tIdx >= 0 && timePart.Length == 0)
+            throw new FormatException($"Invalid dayTimeDuration: {original}");
+
+        // H/S designators must be in the time part (after T), not the date part
+        if (tIdx < 0 && (datePart.Contains('H', StringComparison.Ordinal) || datePart.Contains('S', StringComparison.Ordinal)))
+            throw new FormatException($"Invalid dayTimeDuration: {original}");
+
         decimal totalSeconds = 0;
+        bool hasComponent = false;
 
         // Parse days from date part
         var dIdx = datePart.IndexOf('D', StringComparison.Ordinal);
         if (dIdx >= 0)
         {
             totalSeconds += decimal.Parse(datePart[..dIdx], CultureInfo.InvariantCulture) * 86400m;
+            hasComponent = true;
         }
 
         // Parse time part: nHnMnS
@@ -173,12 +193,15 @@ public readonly record struct DayTimeDuration(decimal TotalSeconds) : IComparabl
                 var suffix = timePart[pos]; pos++;
                 switch (suffix)
                 {
-                    case 'H': totalSeconds += num * 3600m; break;
-                    case 'M': totalSeconds += num * 60m; break;
-                    case 'S': totalSeconds += num; break;
+                    case 'H': totalSeconds += num * 3600m; hasComponent = true; break;
+                    case 'M': totalSeconds += num * 60m; hasComponent = true; break;
+                    case 'S': totalSeconds += num; hasComponent = true; break;
                 }
             }
         }
+
+        if (!hasComponent)
+            throw new FormatException($"Invalid dayTimeDuration: {original}");
 
         return new DayTimeDuration(negative ? -totalSeconds : totalSeconds);
     }
