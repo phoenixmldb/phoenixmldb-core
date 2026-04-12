@@ -278,17 +278,33 @@ public readonly record struct XsDuration(int TotalMonths, TimeSpan DayTime) : IC
 
     public static XsDuration Parse(string s)
     {
+        var original = s;
         s = s.Trim();
         var negative = s.StartsWith('-');
         if (negative) s = s[1..];
-        if (!s.StartsWith('P')) throw new FormatException($"Invalid duration: {s}");
+        if (!s.StartsWith('P')) throw new FormatException($"Invalid duration: {original}");
         s = s[1..]; // skip P
+
+        // "P" or "-P" with nothing after is invalid
+        if (s.Length == 0)
+            throw new FormatException($"Invalid duration: {original}");
 
         int years = 0, months = 0;
         var tIdx = s.IndexOf('T', StringComparison.Ordinal);
         var datePart = tIdx >= 0 ? s[..tIdx] : s;
         var timePart = tIdx >= 0 ? s[(tIdx + 1)..] : "";
 
+        // T must be followed by time components
+        if (tIdx >= 0 && timePart.Length == 0)
+            throw new FormatException($"Invalid duration: {original}");
+
+        // Date part must not contain H/M/S designators without T separator
+        if (tIdx < 0 && (s.Contains('H', StringComparison.Ordinal) || s.Contains('S', StringComparison.Ordinal)))
+            throw new FormatException($"Invalid duration: {original}");
+        // 'M' after digits in the date part is months; but if there's no Y/D and no T, an 'M' alone
+        // could still be valid (e.g., P3M). However, H/S without T is always invalid.
+
+        bool hasDateComponent = false;
         // Parse date part: nYnMnD
         var pos = 0;
         while (pos < datePart.Length)
@@ -300,11 +316,16 @@ public readonly record struct XsDuration(int TotalMonths, TimeSpan DayTime) : IC
             var suffix = datePart[pos]; pos++;
             switch (suffix)
             {
-                case 'Y': years = int.Parse(num, CultureInfo.InvariantCulture); break;
-                case 'M': months = int.Parse(num, CultureInfo.InvariantCulture); break;
-                case 'D': break; // days handled via TimeSpan below
+                case 'Y': years = int.Parse(num, CultureInfo.InvariantCulture); hasDateComponent = true; break;
+                case 'M': months = int.Parse(num, CultureInfo.InvariantCulture); hasDateComponent = true; break;
+                case 'D': hasDateComponent = true; break; // days handled via TimeSpan below
+                default: throw new FormatException($"Invalid duration: {original}");
             }
         }
+
+        // Must have at least one component (date or time)
+        if (!hasDateComponent && timePart.Length == 0)
+            throw new FormatException($"Invalid duration: {original}");
 
         // Parse the full duration via XmlConvert for the day-time part
         var totalMonths = years * 12 + months;
