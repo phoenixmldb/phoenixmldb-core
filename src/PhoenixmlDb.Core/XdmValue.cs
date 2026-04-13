@@ -67,7 +67,7 @@ public readonly record struct YearMonthDuration(int TotalMonths) : IComparable<Y
     }
 
     public static YearMonthDuration Multiply(YearMonthDuration d, double factor) =>
-        new((int)Math.Round(d.TotalMonths * factor));
+        new((int)Math.Floor(d.TotalMonths * factor + 0.5));
 
     public static YearMonthDuration Add(YearMonthDuration a, YearMonthDuration b) =>
         new(a.TotalMonths + b.TotalMonths);
