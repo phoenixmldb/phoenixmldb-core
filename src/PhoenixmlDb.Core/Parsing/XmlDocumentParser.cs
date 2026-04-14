@@ -328,6 +328,11 @@ public sealed class XmlDocumentParser
         var prefix = string.IsNullOrEmpty(reader.Prefix) ? null : reader.Prefix;
         var value = reader.Value;
 
+        // xml:id attributes are always ID attributes per the xml:id specification.
+        // Check both the namespace URI approach and the prefix approach for robustness.
+        var isId = localName == "id" &&
+                   namespaceUri == "http://www.w3.org/XML/1998/namespace";
+
         var attribute = new XdmAttribute
         {
             Id = nodeId,
@@ -336,7 +341,8 @@ public sealed class XmlDocumentParser
             LocalName = localName,
             Prefix = prefix,
             Parent = parentId,
-            Value = value
+            Value = value,
+            IsId = isId
         };
 
         _nodes.Add(attribute);
