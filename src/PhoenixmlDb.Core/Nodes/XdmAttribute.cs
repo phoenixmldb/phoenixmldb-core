@@ -76,6 +76,16 @@ public sealed class XdmAttribute : XdmNode
     /// </remarks>
     public bool IsId { get; init; }
 
+    /// <summary>
+    /// Indicates whether this attribute is an IDREF or IDREFS attribute, as determined
+    /// by the DTD or schema validation.
+    /// </summary>
+    /// <remarks>
+    /// When <c>true</c>, this attribute's value (which may be space-separated for IDREFS)
+    /// can be matched by the <c>fn:idref()</c> XPath function.
+    /// </remarks>
+    public bool IsIdRef { get; init; }
+
     public override XdmQName? NodeName => new XdmQName(Namespace, LocalName, Prefix);
 
     public override string StringValue => Value;

@@ -452,7 +452,7 @@ public readonly record struct QName : IEquatable<QName>
     /// Gets the display form of the name: <c>prefix:localName</c> if a prefix is present,
     /// or just <c>localName</c> otherwise.
     /// </summary>
-    public string PrefixedName => Prefix is null ? LocalName : $"{Prefix}:{LocalName}";
+    public string PrefixedName => string.IsNullOrEmpty(Prefix) ? LocalName : $"{Prefix}:{LocalName}";
 
     /// <summary>
     /// Gets the resolved namespace name, preferring ExpandedNamespace, then ResolvedNamespaceUri.

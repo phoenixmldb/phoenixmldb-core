@@ -547,10 +547,13 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
     {
         s = s.Trim();
 
-        // XSD: T24:00:00 is valid — normalize to next day T00:00:00
-        // But T24:MM:SS with non-zero MM or SS is invalid (FORG0001)
+        // XSD dateTime MUST contain 'T' separator: [-]CCYY-MM-DDThh:mm:ss[.sss][timezone]
+        // Without 'T', the string could be a date, time, gYear, gYearMonth, etc.
+        // .NET DateTime.Parse is too lenient — it accepts date-only and time-only strings.
         var tIdx = s.IndexOf('T', StringComparison.Ordinal);
-        if (tIdx >= 0 && tIdx + 3 < s.Length && s.AsSpan(tIdx + 1, 2).SequenceEqual("24"))
+        if (tIdx < 0)
+            throw new FormatException($"'{s}' is not a valid xs:dateTime (missing 'T' separator)");
+        if (tIdx + 3 < s.Length && s.AsSpan(tIdx + 1, 2).SequenceEqual("24"))
         {
             // Validate that minutes, seconds, and fractional seconds are all zero
             var afterTime = s[(tIdx + 3)..]; // everything after "T24"
@@ -734,7 +737,11 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
             if (leftYear != rightYear) return leftYear.CompareTo(rightYear);
             // Same year — compare the rest using DateTimeOffset
         }
-        return Value.CompareTo(other.Value);
+        // Per XPath F&O §10.4: when comparing dateTimes where one has a timezone
+        // and the other does not, the implicit timezone is applied to the one without.
+        var leftVal = HasTimezone ? Value : new DateTimeOffset(Value.DateTime, DateTimeOffset.Now.Offset);
+        var rightVal = other.HasTimezone ? other.Value : new DateTimeOffset(other.Value.DateTime, DateTimeOffset.Now.Offset);
+        return leftVal.CompareTo(rightVal);
     }
 
     public override string ToString()
@@ -901,7 +908,10 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
 
         if (!isExtended)
         {
-            // Standard year range — use .NET parsing (will throw on invalid dates like Feb 29 in non-leap years)
+            // Validate YYYY-MM-DD format before calling DateOnly.Parse, which is too lenient
+            // (e.g., it accepts "1972-12" as December 1972, but that's gYearMonth, not date).
+            if (dateStr.Length != 10 || dateStr[4] != '-' || dateStr[7] != '-')
+                throw new FormatException($"'{s}' is not a valid xs:date (expected YYYY-MM-DD format)");
             return new XsDate(DateOnly.Parse(dateStr, CultureInfo.InvariantCulture), tz);
         }
 
@@ -948,22 +958,11 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
 
     public int CompareTo(XsDate other)
     {
-        // Extended years: compare by year first, then month/day
-        var leftYear = EffectiveYear;
-        var rightYear = other.EffectiveYear;
-        if (leftYear != rightYear) return leftYear.CompareTo(rightYear);
-
-        // Same effective year — compare month and day
-        var monthCmp = Date.Month.CompareTo(other.Date.Month);
-        if (monthCmp != 0) return monthCmp;
-        var dayCmp = Date.Day.CompareTo(other.Date.Day);
-        if (dayCmp != 0) return dayCmp;
-
-        // Same date — compare timezones (normalize to UTC)
-        var leftTz = Timezone ?? TimeSpan.Zero;
-        var rightTz = other.Timezone ?? TimeSpan.Zero;
-        // Earlier UTC = later local time offset, so subtract offset
-        return (-leftTz).CompareTo(-rightTz);
+        // Per XPath F&O: xs:date values are compared by their starting instant
+        // (midnight in their respective timezones, normalized to UTC).
+        // Two dates in different timezones can be equal if their UTC midnight
+        // instants coincide (e.g., 2024-01-16+12:00 eq 2024-01-15-12:00).
+        return ToUtcTicks().CompareTo(other.ToUtcTicks());
     }
 
     /// <summary>
@@ -1435,14 +1434,31 @@ public readonly struct XdmValue : IEquatable<XdmValue>
     public object? RawValue => _value;
 
     // Equality
-    public bool Equals(XdmValue other) =>
-        _type == other._type && Equals(_value, other._value);
+    public bool Equals(XdmValue other)
+    {
+        if (_type != other._type) return false;
+        // byte[] needs content comparison, not reference equality
+        if (_value is byte[] lBytes && other._value is byte[] rBytes)
+            return lBytes.AsSpan().SequenceEqual(rBytes);
+        return Equals(_value, other._value);
+    }
 
     public override bool Equals(object? obj) =>
         obj is XdmValue other && Equals(other);
 
-    public override int GetHashCode() =>
-        HashCode.Combine(_type, _value);
+    public override int GetHashCode()
+    {
+        // byte[] needs content-based hash, not reference hash
+        if (_value is byte[] bytes)
+        {
+            var hash = new HashCode();
+            hash.Add(_type);
+            foreach (var b in bytes)
+                hash.Add(b);
+            return hash.ToHashCode();
+        }
+        return HashCode.Combine(_type, _value);
+    }
 
     public static bool operator ==(XdmValue left, XdmValue right) => left.Equals(right);
     public static bool operator !=(XdmValue left, XdmValue right) => !left.Equals(right);

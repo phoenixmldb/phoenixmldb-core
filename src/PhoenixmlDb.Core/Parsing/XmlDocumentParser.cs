@@ -56,6 +56,23 @@ public sealed class XmlDocumentParser
     private readonly bool _preserveWhitespace;
 
     /// <summary>
+    /// Cached reflection accessors for the internal <c>SchemaType</c> property on
+    /// validating readers. This property returns an <see cref="System.Xml.Schema.XmlSchemaDatatype"/>
+    /// for DTD-validated attributes, exposing the <see cref="System.Xml.Schema.XmlSchemaDatatype.TokenizedType"/>
+    /// needed to identify ID/IDREF/IDREFS attributes.
+    ///
+    /// We cache per-reader-type because different validation modes use different internal
+    /// reader types (<c>XmlValidatingReaderImpl</c> for DTD, <c>XsdValidatingReader</c> for XSD).
+    /// Using a single cached PropertyInfo across both fails at runtime when types mismatch.
+    /// </summary>
+    /// <remarks>
+    /// The public <c>XmlReader.SchemaInfo</c> property returns null for DTD validation —
+    /// DTD type info is only available through this internal property. This is a well-known
+    /// limitation of the .NET XML API.
+    /// </remarks>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> _readerSchemaTypeProperties = new();
+
+    /// <summary>
     /// Creates a new XML parser that will assign the specified document and node IDs.
     /// </summary>
     /// <param name="documentId">The <see cref="DocumentId"/> to assign to all parsed nodes.</param>
@@ -107,8 +124,37 @@ public sealed class XmlDocumentParser
             IgnoreWhitespace = !_preserveWhitespace,
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
-            DtdProcessing = DtdProcessing.Ignore
+            DtdProcessing = DtdProcessing.Parse,
+            ValidationType = ValidationType.DTD
         };
+        // Suppress validation event exceptions — we want DTD type info but not validation failures
+        settings.ValidationEventHandler += static (_, _) => { };
+
+        using var reader = XmlReader.Create(textReader, settings);
+        return ParseInternal(reader, documentUri);
+    }
+
+    /// <summary>
+    /// Parses XML content with XSD schema validation, populating type annotations
+    /// (including <c>xs:ID</c> / <c>xs:IDREF</c>) from the schema.
+    /// </summary>
+    /// <param name="textReader">A reader positioned at the start of the XML content.</param>
+    /// <param name="documentUri">Optional document URI to assign to the resulting <see cref="XdmDocument"/>.</param>
+    /// <param name="schemas">The XSD schema set to validate against.</param>
+    /// <returns>A <see cref="ParseResult"/> containing the document and all parsed nodes.</returns>
+    public ParseResult Parse(TextReader textReader, string? documentUri, System.Xml.Schema.XmlSchemaSet schemas)
+    {
+        var settings = new XmlReaderSettings
+        {
+            IgnoreWhitespace = !_preserveWhitespace,
+            IgnoreComments = false,
+            IgnoreProcessingInstructions = false,
+            DtdProcessing = DtdProcessing.Parse,
+            ValidationType = ValidationType.Schema
+        };
+        settings.Schemas = schemas;
+        // Suppress validation event exceptions — we want schema type info but not validation failures
+        settings.ValidationEventHandler += static (_, _) => { };
 
         using var reader = XmlReader.Create(textReader, settings);
         return ParseInternal(reader, documentUri);
@@ -128,8 +174,11 @@ public sealed class XmlDocumentParser
             IgnoreWhitespace = !_preserveWhitespace,
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
-            DtdProcessing = DtdProcessing.Ignore
+            DtdProcessing = DtdProcessing.Parse,
+            ValidationType = ValidationType.DTD
         };
+        // Suppress validation event exceptions — we want DTD type info but not validation failures
+        settings.ValidationEventHandler += static (_, _) => { };
 
         using var reader = XmlReader.Create(stream, settings);
         return ParseInternal(reader, documentUri);
@@ -206,6 +255,31 @@ public sealed class XmlDocumentParser
         var localName = reader.LocalName;
         var prefix = string.IsNullOrEmpty(reader.Prefix) ? null : reader.Prefix;
         var isEmpty = reader.IsEmptyElement;
+
+        // Detect xs:ID-typed simple-content elements. An element's content is ID-typed when:
+        // - the schema type (or its simple-type datatype) has XmlTypeCode.Id (xs:ID or derived), OR
+        // - the element has a union type and the selected MemberType is xs:ID (e.g., xs:ID | xs:integer)
+        // For types derived from xs:ID by restriction, Datatype.TypeCode still reports Id.
+        var isIdContent = false;
+        if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo elemSchemaInfo)
+        {
+            var schemaType = elemSchemaInfo.SchemaType;
+            if (schemaType != null)
+            {
+                if (schemaType.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
+                    isIdContent = true;
+                else if (schemaType.Datatype?.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
+                    isIdContent = true;
+            }
+            // Check union member type — for xs:ID-in-a-union, MemberType is the selected member
+            if (!isIdContent && elemSchemaInfo.MemberType != null)
+            {
+                var memberType = elemSchemaInfo.MemberType;
+                if (memberType.TypeCode == System.Xml.Schema.XmlTypeCode.Id ||
+                    memberType.Datatype?.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
+                    isIdContent = true;
+            }
+        }
 
         // Collect attributes
         var attributes = new List<NodeId>();
@@ -287,7 +361,8 @@ public sealed class XmlDocumentParser
             Parent = parentId,
             Attributes = attributes.ToImmutableArray(),
             NamespaceDeclarations = namespaceDecls.ToImmutableArray(),
-            Children = children.ToImmutableArray()
+            Children = children.ToImmutableArray(),
+            IsIdContent = isIdContent
         };
 
         // Compute string value from descendant text nodes (XDM §5.7.2).
@@ -329,9 +404,45 @@ public sealed class XmlDocumentParser
         var value = reader.Value;
 
         // xml:id attributes are always ID attributes per the xml:id specification.
-        // Check both the namespace URI approach and the prefix approach for robustness.
         var isId = localName == "id" &&
                    namespaceUri == "http://www.w3.org/XML/1998/namespace";
+
+        var isIdRef = false;
+
+        // Check DTD/Schema type information for ID/IDREF declarations.
+        // For XSD validation, SchemaInfo.SchemaType is populated.
+        if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo schemaInfo &&
+            schemaInfo.SchemaType != null)
+        {
+            if (!isId && schemaInfo.SchemaType.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
+                isId = true;
+
+            if (schemaInfo.SchemaType.TypeCode == System.Xml.Schema.XmlTypeCode.Idref ||
+                schemaInfo.SchemaType.QualifiedName?.Name == "IDREFS")
+                isIdRef = true;
+        }
+        else
+        {
+            // For DTD validation, the public SchemaInfo property returns null.
+            // The DTD type info is only available through the internal SchemaType property
+            // on XmlValidatingReaderImpl, which returns an XmlSchemaDatatype with TokenizedType.
+            // Cache per-reader-type because DTD and XSD validation use different internal types.
+            var readerType = reader.GetType();
+            var schemaTypeProp = _readerSchemaTypeProperties.GetOrAdd(readerType, static t =>
+                t.GetProperty("SchemaType",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic));
+
+            if (schemaTypeProp?.GetValue(reader) is System.Xml.Schema.XmlSchemaDatatype datatype)
+            {
+                if (!isId && datatype.TokenizedType == System.Xml.XmlTokenizedType.ID)
+                    isId = true;
+
+                if (datatype.TokenizedType == System.Xml.XmlTokenizedType.IDREF ||
+                    datatype.TokenizedType == System.Xml.XmlTokenizedType.IDREFS)
+                    isIdRef = true;
+            }
+        }
 
         var attribute = new XdmAttribute
         {
@@ -342,7 +453,8 @@ public sealed class XmlDocumentParser
             Prefix = prefix,
             Parent = parentId,
             Value = value,
-            IsId = isId
+            IsId = isId,
+            IsIdRef = isIdRef
         };
 
         _nodes.Add(attribute);

@@ -115,6 +115,14 @@ public sealed class XdmElement : XdmNode
     /// </remarks>
     public XdmTypeName TypeAnnotation { get; init; } = XdmTypeName.Untyped;
 
+    /// <summary>
+    /// True if this element's simple-content type is <c>xs:ID</c> or a type derived from
+    /// <c>xs:ID</c> by restriction. Populated during XSD schema validation. Used by
+    /// <c>fn:id</c> and <c>fn:element-with-id</c> to locate elements whose typed content
+    /// matches a candidate ID.
+    /// </summary>
+    public bool IsIdContent { get; init; }
+
     public override XdmQName? NodeName => new XdmQName(Namespace, LocalName, Prefix);
 
     /// <summary>
