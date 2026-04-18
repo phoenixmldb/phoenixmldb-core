@@ -1195,6 +1195,47 @@ public readonly record struct XsGMonth(string Value)
 }
 
 /// <summary>
+/// Wrapper for XSD string-derived types (xs:normalizedString, xs:token, xs:language,
+/// xs:NMTOKEN, xs:Name, xs:NCName, xs:ID, xs:IDREF, xs:ENTITY) that preserves the
+/// declared type name for correct <c>instance of</c> semantics.
+/// </summary>
+/// <remarks>
+/// The XSD string type hierarchy is:
+/// xs:string &gt; xs:normalizedString &gt; xs:token &gt; { xs:language, xs:NMTOKEN, xs:Name }
+/// xs:Name &gt; xs:NCName &gt; { xs:ID, xs:IDREF, xs:ENTITY }
+/// Without this wrapper, all subtypes collapse to CLR <c>string</c>, making
+/// <c>xs:normalizedString("x") instance of xs:token</c> incorrectly return <c>true</c>.
+/// </remarks>
+public readonly record struct XsTypedString(string Value, string TypeName)
+{
+    public override string ToString() => Value;
+
+    /// <summary>
+    /// Checks whether this typed string's type is the same as or a subtype of the given type name.
+    /// Uses the XSD string derivation hierarchy.
+    /// </summary>
+    public bool IsSubtypeOf(string targetType)
+    {
+        if (TypeName == targetType) return true;
+        return GetAncestors(TypeName).Contains(targetType);
+    }
+
+    private static HashSet<string> GetAncestors(string typeName) => typeName switch
+    {
+        "ENTITY" => new() { "NCName", "Name", "token", "normalizedString", "string" },
+        "IDREF" => new() { "NCName", "Name", "token", "normalizedString", "string" },
+        "ID" => new() { "NCName", "Name", "token", "normalizedString", "string" },
+        "NCName" => new() { "Name", "token", "normalizedString", "string" },
+        "Name" => new() { "token", "normalizedString", "string" },
+        "NMTOKEN" => new() { "token", "normalizedString", "string" },
+        "language" => new() { "token", "normalizedString", "string" },
+        "token" => new() { "normalizedString", "string" },
+        "normalizedString" => new() { "string" },
+        _ => new()
+    };
+}
+
+/// <summary>
 /// Represents an XDM atomic value — a typed, immutable value from the XPath/XQuery type system.
 /// </summary>
 /// <remarks>
