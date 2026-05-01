@@ -1,6 +1,9 @@
 # Release History
 
-## 1.0.25 (Unreleased)
+## 1.0.28 (2026-04-30)
+
+> Note: 1.0.26 and 1.0.27 are content-equivalent placeholder versions on NuGet;
+> they were tagged from the same source. Use 1.0.28 onward.
 
 ### Features
 - **DTD/XSD ID and IDREF type detection**: `XmlDocumentParser` now parses with DTD validation enabled (instead of `DtdProcessing.Ignore`) to detect `ID`, `IDREF`, and `IDREFS` attribute types. For XSD validation, a new `Parse(TextReader, string?, XmlSchemaSet)` overload populates type information from schema. DTD type info is read via reflection on the internal `SchemaType` property (the public `SchemaInfo` returns null for DTD validation).
