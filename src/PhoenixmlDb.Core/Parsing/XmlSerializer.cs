@@ -58,11 +58,14 @@ public sealed class XmlSerializer
     /// Function to resolve <see cref="NamespaceId"/> values back to namespace URI strings.
     /// Returns <c>null</c> if the namespace is not found (treated as no namespace).
     /// </param>
-    /// <param name="indent">When <c>true</c>, the output XML is indented for readability.</param>
+    /// <param name="indent">
+    /// When <c>true</c> (the default), the output XML is indented for readability.
+    /// Pass <c>false</c> for compact output.
+    /// </param>
     public XmlSerializer(
         Func<NodeId, XdmNode?> nodeResolver,
         Func<NamespaceId, string?> namespaceResolver,
-        bool indent = false)
+        bool indent = true)
     {
         _nodeResolver = nodeResolver;
         _namespaceResolver = namespaceResolver;
@@ -82,8 +85,8 @@ public sealed class XmlSerializer
     /// <returns>The XML string representation of the document.</returns>
     public string Serialize(XdmDocument document)
     {
-        var sb = new StringBuilder();
-        using var writer = XmlWriter.Create(sb, _settings);
+        using var sw = new Utf8StringWriter();
+        using var writer = XmlWriter.Create(sw, _settings);
 
         writer.WriteStartDocument();
 
@@ -97,7 +100,7 @@ public sealed class XmlSerializer
         writer.WriteEndDocument();
         writer.Flush();
 
-        return sb.ToString();
+        return sw.ToString();
     }
 
     /// <summary>
@@ -107,13 +110,13 @@ public sealed class XmlSerializer
     /// <returns>The XML string representation of the node.</returns>
     public string Serialize(XdmNode node)
     {
-        var sb = new StringBuilder();
-        using var writer = XmlWriter.Create(sb, _settings);
+        using var sw = new Utf8StringWriter();
+        using var writer = XmlWriter.Create(sw, _settings);
 
         SerializeNode(writer, node);
         writer.Flush();
 
-        return sb.ToString();
+        return sw.ToString();
     }
 
     /// <summary>
@@ -168,6 +171,26 @@ public sealed class XmlSerializer
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// A <see cref="StringWriter"/> that reports its encoding as UTF-8.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When <see cref="XmlWriter"/> writes to a <see cref="StringWriter"/> (or
+    /// <see cref="System.Text.StringBuilder"/>), it reads the declared encoding from
+    /// <see cref="TextWriter.Encoding"/> — which is always UTF-16 for .NET strings,
+    /// regardless of the <see cref="XmlWriterSettings.Encoding"/> property.  Overriding
+    /// <see cref="Encoding"/> here makes the XML declaration say
+    /// <c>encoding="utf-8"</c>, which is the correct declared encoding for content
+    /// consumed as a .NET <see langword="string"/> and later saved / transmitted as UTF-8
+    /// bytes.
+    /// </para>
+    /// </remarks>
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
     }
 
     private void SerializeElement(XmlWriter writer, XdmElement element)
