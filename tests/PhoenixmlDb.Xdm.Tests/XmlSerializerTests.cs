@@ -93,9 +93,8 @@ public class XmlSerializerTests
         var serializer = CreateSerializer();
         var xml = serializer.Serialize(doc);
 
-        // StringBuilder-based XmlWriter produces utf-16, stream-based produces utf-8
-        (xml.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>", StringComparison.Ordinal) ||
-         xml.StartsWith("<?xml version=\"1.0\" encoding=\"utf-16\"?>", StringComparison.Ordinal)).Should().BeTrue();
+        // Utf8StringWriter ensures the declaration always says utf-8
+        xml.Should().StartWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
     }
 
     [Fact]
