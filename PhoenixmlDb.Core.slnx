@@ -2,5 +2,6 @@
   <Project Path="src/PhoenixmlDb.Core/PhoenixmlDb.Core.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/PhoenixmlDb.Core.Tests/PhoenixmlDb.Core.Tests.csproj" />
+    <Project Path="tests/PhoenixmlDb.Xdm.Tests/PhoenixmlDb.Xdm.Tests.csproj" />
   </Folder>
 </Solution>
