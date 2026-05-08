@@ -186,6 +186,7 @@ public sealed class XmlDocumentParser
 
     private ParseResult ParseInternal(XmlReader reader, string? documentUri)
     {
+        var lineInfo = reader as System.Xml.IXmlLineInfo;
         var documentNodeId = AllocateNodeId();
         var documentChildren = new List<NodeId>();
         NodeId? documentElement = null;
@@ -195,17 +196,17 @@ public sealed class XmlDocumentParser
             switch (reader.NodeType)
             {
                 case XmlNodeType.Element:
-                    var elementId = ParseElement(reader, null);
+                    var elementId = ParseElement(reader, null, lineInfo);
                     documentChildren.Add(elementId);
                     documentElement ??= elementId;
                     break;
 
                 case XmlNodeType.Comment:
-                    documentChildren.Add(ParseComment(reader, null));
+                    documentChildren.Add(ParseComment(reader, null, lineInfo));
                     break;
 
                 case XmlNodeType.ProcessingInstruction:
-                    documentChildren.Add(ParseProcessingInstruction(reader, null));
+                    documentChildren.Add(ParseProcessingInstruction(reader, null, lineInfo));
                     break;
 
                 case XmlNodeType.Text:
@@ -247,8 +248,12 @@ public sealed class XmlDocumentParser
         };
     }
 
-    private NodeId ParseElement(XmlReader reader, NodeId? parentId)
+    private NodeId ParseElement(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        // Capture position before MoveToFirstAttribute shifts the reader cursor.
+        var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+        var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+
         var nodeId = AllocateNodeId();
         var namespaceUri = reader.NamespaceURI ?? string.Empty;
         var namespaceId = _namespaceResolver(namespaceUri);
@@ -301,7 +306,7 @@ public sealed class XmlDocumentParser
                 else
                 {
                     // Regular attribute
-                    var attrId = ParseAttribute(reader, nodeId);
+                    var attrId = ParseAttribute(reader, nodeId, lineInfo);
                     attributes.Add(attrId);
                 }
             } while (reader.MoveToNextAttribute());
@@ -319,7 +324,7 @@ public sealed class XmlDocumentParser
                 switch (reader.NodeType)
                 {
                     case XmlNodeType.Element:
-                        children.Add(ParseElement(reader, nodeId));
+                        children.Add(ParseElement(reader, nodeId, lineInfo));
                         break;
 
                     case XmlNodeType.EndElement:
@@ -329,21 +334,21 @@ public sealed class XmlDocumentParser
                     case XmlNodeType.CDATA:
                         var text = reader.Value;
                         if (!string.IsNullOrEmpty(text))
-                            children.Add(ParseText(reader, nodeId));
+                            children.Add(ParseText(reader, nodeId, lineInfo));
                         break;
 
                     case XmlNodeType.Whitespace:
                     case XmlNodeType.SignificantWhitespace:
                         if (_preserveWhitespace)
-                            children.Add(ParseText(reader, nodeId));
+                            children.Add(ParseText(reader, nodeId, lineInfo));
                         break;
 
                     case XmlNodeType.Comment:
-                        children.Add(ParseComment(reader, nodeId));
+                        children.Add(ParseComment(reader, nodeId, lineInfo));
                         break;
 
                     case XmlNodeType.ProcessingInstruction:
-                        children.Add(ParseProcessingInstruction(reader, nodeId));
+                        children.Add(ParseProcessingInstruction(reader, nodeId, lineInfo));
                         break;
                 }
             }
@@ -362,7 +367,9 @@ public sealed class XmlDocumentParser
             Attributes = attributes.ToImmutableArray(),
             NamespaceDeclarations = namespaceDecls.ToImmutableArray(),
             Children = children.ToImmutableArray(),
-            IsIdContent = isIdContent
+            IsIdContent = isIdContent,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol
         };
 
         // Compute string value from descendant text nodes (XDM §5.7.2).
@@ -394,8 +401,12 @@ public sealed class XmlDocumentParser
         return sb.ToString();
     }
 
-    private NodeId ParseAttribute(XmlReader reader, NodeId parentId)
+    private NodeId ParseAttribute(XmlReader reader, NodeId parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        // Position is already on this attribute (after MoveToFirstAttribute / MoveToNextAttribute).
+        var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+        var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+
         var nodeId = AllocateNodeId();
         var namespaceUri = reader.NamespaceURI ?? string.Empty;
         var namespaceId = _namespaceResolver(namespaceUri);
@@ -454,15 +465,20 @@ public sealed class XmlDocumentParser
             Parent = parentId,
             Value = value,
             IsId = isId,
-            IsIdRef = isIdRef
+            IsIdRef = isIdRef,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol
         };
 
         _nodes.Add(attribute);
         return nodeId;
     }
 
-    private NodeId ParseText(XmlReader reader, NodeId? parentId)
+    private NodeId ParseText(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+        var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+
         var nodeId = AllocateNodeId();
         var value = reader.Value;
 
@@ -471,15 +487,20 @@ public sealed class XmlDocumentParser
             Id = nodeId,
             Document = _documentId,
             Parent = parentId,
-            Value = value
+            Value = value,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol
         };
 
         _nodes.Add(text);
         return nodeId;
     }
 
-    private NodeId ParseComment(XmlReader reader, NodeId? parentId)
+    private NodeId ParseComment(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+        var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+
         var nodeId = AllocateNodeId();
         var value = reader.Value;
 
@@ -488,15 +509,20 @@ public sealed class XmlDocumentParser
             Id = nodeId,
             Document = _documentId,
             Parent = parentId,
-            Value = value
+            Value = value,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol
         };
 
         _nodes.Add(comment);
         return nodeId;
     }
 
-    private NodeId ParseProcessingInstruction(XmlReader reader, NodeId? parentId)
+    private NodeId ParseProcessingInstruction(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+        var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+
         var nodeId = AllocateNodeId();
         var target = reader.Name;
         var value = reader.Value;
@@ -507,7 +533,9 @@ public sealed class XmlDocumentParser
             Document = _documentId,
             Parent = parentId,
             Target = target,
-            Value = value
+            Value = value,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol
         };
 
         _nodes.Add(pi);

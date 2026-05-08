@@ -96,7 +96,7 @@ public class XmlSerializerRoundTripTests
 
         // After stripping the XML declaration line, the content should have no line breaks
         // between elements (compact mode).
-        var afterDecl = result.Contains("?>")
+        var afterDecl = result.Contains("?>", StringComparison.Ordinal)
             ? result[(result.IndexOf("?>", StringComparison.Ordinal) + 2)..]
             : result;
 
