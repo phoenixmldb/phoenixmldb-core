@@ -69,6 +69,26 @@ public abstract class XdmNode
     public required DocumentId Document { get; init; }
 
     /// <summary>
+    /// Line number where this node starts in its source document, 1-based.
+    /// Zero means "no source position" (synthesized node).
+    /// </summary>
+    /// <remarks>
+    /// Populated by <see cref="Parsing.XmlDocumentParser"/> via <c>IXmlLineInfo</c> during parse.
+    /// Nodes constructed programmatically (e.g. via editor Insert commands) default to 0.
+    /// </remarks>
+    public int SourceLine { get; init; }
+
+    /// <summary>
+    /// Column number where this node starts in its source document, 1-based.
+    /// Zero means "no source position" (synthesized node).
+    /// </summary>
+    /// <remarks>
+    /// Populated by <see cref="Parsing.XmlDocumentParser"/> via <c>IXmlLineInfo</c> during parse.
+    /// Nodes constructed programmatically (e.g. via editor Insert commands) default to 0.
+    /// </remarks>
+    public int SourceColumn { get; init; }
+
+    /// <summary>
     /// The kind of this node (element, attribute, text, etc.).
     /// </summary>
     /// <remarks>
