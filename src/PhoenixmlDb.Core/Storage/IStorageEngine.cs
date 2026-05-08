@@ -28,6 +28,28 @@ public interface IStorageEngine : IDisposable, IAsyncDisposable
     /// Flushes any buffered data to disk.
     /// </summary>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// True when the engine was opened in read-only mode. Write transactions and snapshot
+    /// operations that require flush/compact may behave differently or fail when this is true.
+    /// </summary>
+    bool IsReadOnly { get; }
+
+    /// <summary>
+    /// Writes a consistent snapshot of the entire storage environment to <paramref name="output"/>.
+    /// </summary>
+    /// <param name="output">Stream that receives the snapshot bytes. Not closed by this method.</param>
+    /// <param name="options">Snapshot options, or <c>null</c> for engine defaults.</param>
+    /// <param name="cancellationToken">Cancels the snapshot in progress.</param>
+    /// <returns>The number of bytes written to <paramref name="output"/>.</returns>
+    /// <remarks>
+    /// Snapshots are taken under the engine's MVCC guarantees: the resulting stream
+    /// reflects a single consistent point in time, even if writers continue concurrently.
+    /// The stream format is engine-specific and is intended to be consumed by the same
+    /// engine implementation's restore path.
+    /// </remarks>
+    Task<long> SnapshotAsync(Stream output, SnapshotOptions? options = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
