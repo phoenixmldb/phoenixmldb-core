@@ -1,5 +1,21 @@
 # Release History
 
+## 1.1.0 — 2026-05-08
+
+### Added
+- `XdmNode.SourceLine` and `XdmNode.SourceColumn` (1-based; 0 = no source position).
+- `XmlDocumentParser` populates source positions from `IXmlLineInfo` for elements, attributes, text, comments, and processing instructions.
+
+### Compatibility
+- Additive change — existing consumers (PhoenixmlDb.XQuery, PhoenixmlDb.Xslt, downstream NuGet packages) compile and run unchanged. The new fields default to 0; consumers that don't read them are unaffected.
+- XQuery and XSLT packages do **not** need rebuilds for 1.1.0; they remain compatible with 1.0.30 binaries. New consumers that want source positions take 1.1.0.
+
+### Known limitations
+- Source positions are parse-time only. Round-trip via `Save` does not refresh them; the in-memory positions reflect the original parsed layout.
+- Editor mutation helpers (`Rename`, `SetValue`, `Insert`) copy original positions to mutated nodes via C# object initializers. Logically correct until save+reparse.
+
+---
+
 ## 1.0.29 (2026-04-30)
 
 > Note: 1.0.26, 1.0.27, and 1.0.28 are content-equivalent placeholder versions on NuGet —
