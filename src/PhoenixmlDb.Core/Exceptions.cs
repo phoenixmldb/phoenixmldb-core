@@ -284,7 +284,7 @@ public class TransactionTimeoutException : TransactionException
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>When it's thrown:</b> By <see cref="IContainer.QueryAsync"/> and
+/// <b>When it's thrown:</b> By <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/> and
 /// <see cref="IReadTransaction.QueryAsync"/> when the XQuery expression has a syntax error,
 /// a type error, a dynamic error (e.g., division by zero), or references an undeclared
 /// variable or function.

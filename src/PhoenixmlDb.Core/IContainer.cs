@@ -427,6 +427,26 @@ public interface IContainer
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Executes <paramref name="query"/> against documents whose name passes
+    /// <paramref name="documentNameFilter"/>. Use this to hide system / sidecar
+    /// documents from user-facing query surfaces. Defaults to delegating to the
+    /// unfiltered overload so existing implementations stay source-compatible.
+    /// </summary>
+    /// <param name="query">XQuery 4.0 expression.</param>
+    /// <param name="variables">External variable bindings.</param>
+    /// <param name="documentNameFilter">
+    /// Predicate over document name. Documents for which it returns <c>false</c> are
+    /// excluded before query iteration. Pass <c>null</c> for legacy unfiltered behavior.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    IAsyncEnumerable<object> QueryAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? variables,
+        Predicate<string>? documentNameFilter,
+        CancellationToken cancellationToken = default)
+        => QueryAsync(query, variables, cancellationToken);
+
+    /// <summary>
     /// Sets a single metadata key-value pair on a document.
     /// </summary>
     /// <param name="documentName">The name of the document to attach metadata to.</param>
@@ -622,7 +642,7 @@ public sealed class ContainerOptions
     /// <remarks>
     /// <para>
     /// Namespaces registered here are automatically available in XQuery expressions
-    /// executed via <see cref="IContainer.QueryAsync"/>. This avoids repeating
+    /// executed via <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/>. This avoids repeating
     /// <c>declare namespace</c> prologues in every query.
     /// </para>
     /// <para>
@@ -816,7 +836,7 @@ public record DocumentOptions
 /// <remarks>
 /// Both XML and JSON documents are first-class citizens in PhoenixmlDb. Both are parsed into
 /// the XQuery Data Model (XDM) and can be queried with XQuery expressions via
-/// <see cref="IContainer.QueryAsync"/>. The content type is typically auto-detected
+/// <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/>. The content type is typically auto-detected
 /// (see <see cref="DocumentOptions.ContentType"/>) but can be set explicitly.
 /// </remarks>
 public enum ContentType

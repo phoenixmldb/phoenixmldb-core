@@ -28,7 +28,7 @@ namespace PhoenixmlDb.Core;
 /// <para>
 /// <b>When NOT to use:</b> For single document reads or single queries, the convenience
 /// methods on <see cref="IContainer"/> (e.g., <see cref="IContainer.GetDocumentAsync"/>,
-/// <see cref="IContainer.QueryAsync"/>) handle transactions automatically and are simpler.
+/// <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/>) handle transactions automatically and are simpler.
 /// </para>
 /// <para>
 /// <b>Important:</b> Always dispose read transactions promptly. Long-lived read transactions

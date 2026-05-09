@@ -1,5 +1,16 @@
 # Release History
 
+## 1.1.1 — 2026-05-09
+
+### Added
+- `IContainer.QueryAsync(string, IReadOnlyDictionary<string,object>?, Predicate<string>?, CancellationToken)` overload accepts a document-name predicate to scope the query to a subset of the container. The 3-argument overload remains; the new one is a default interface method (DIM) that delegates to the unfiltered version when the implementer doesn't override.
+
+### Why
+Embedded hosts that store sidecar / system documents alongside user documents (notably the EPS server's `_eps_meta.json` metadata sidecar) need a way to hide them from user-issued XQuery without filtering result items after the fact. Per-document query iteration would otherwise visit the sidecar, evaluate the user's query against it, and return spurious extra items (e.g. `0` from `sum(())` aggregates). The new overload lets adapters pass `name => name != "<sidecar>"` and the iteration skips the sidecar before parse/load.
+
+### Compatibility
+Additive. Existing 3-argument callers compile and link unchanged. Existing implementers (only `PhoenixmlDb.Storage.Container` ships against this interface today) inherit the default implementation, which preserves the legacy unfiltered behavior.
+
 ## 1.1.0 — 2026-05-08
 
 ### Added

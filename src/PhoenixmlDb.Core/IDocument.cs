@@ -182,7 +182,7 @@ public interface IDocument
     /// <para>
     /// Use this method when you need to walk the document tree programmatically rather than
     /// using XQuery. For most query use cases, prefer
-    /// <see cref="IContainer.QueryAsync"/> which operates on XDM trees internally.
+    /// <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/> which operates on XDM trees internally.
     /// </para>
     /// </remarks>
     ValueTask<IXdmNode> GetRootNodeAsync(CancellationToken cancellationToken = default);
@@ -230,7 +230,7 @@ public interface IDocument
 /// </para>
 /// <para>
 /// The XDM tree is what the XQuery engine operates on internally. While most application
-/// code should use <see cref="IContainer.QueryAsync"/> to query documents with XQuery,
+/// code should use <see cref="IContainer.QueryAsync(string, System.Collections.Generic.IReadOnlyDictionary{string, object}, System.Threading.CancellationToken)"/> to query documents with XQuery,
 /// <c>IXdmNode</c> is available for programmatic tree walking when you need to traverse
 /// the document structure in C# code.
 /// </para>
