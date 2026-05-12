@@ -1,5 +1,35 @@
 # Release History
 
+## 1.1.2 — 2026-05-12
+
+### New: `XdmSequence` — public wire-format for chaining transformations
+
+A typed, ordered, store-carrying sequence wrapper. Engines (XSLT, XQuery)
+return their typed results wrapped in an `XdmSequence`, and accept one as
+input to chain transformations without serializing through XML markup.
+
+For pure-atomic sequences `Store` is null and the value is fully
+self-contained. For sequences containing `XdmNode` items, `Store` carries
+the backing `INodeStore` so the receiving engine can navigate the source's
+children. The store is typed as `object?` to keep `PhoenixmlDb.Core`
+independent of engine-specific node-store implementations; engines
+downcast to their concrete type (e.g. `XdmInMemoryStore` from
+`PhoenixmlDb.Xslt`).
+
+API surface:
+
+- `XdmSequence.Empty` — the empty sequence singleton.
+- `XdmSequence.Of(item)` — single-atomic wrapper.
+- `XdmSequence.OfAtomics(items…)` — atomic-only sequence; rejects nodes.
+- `XdmSequence.OfNode(node, store)` — single node + matching store.
+- `XdmSequence.OfNodes(store, nodes…)` — multiple nodes sharing a store.
+- `XdmSequence.FromEngineResult(items, store)` — for engine implementers.
+- `IReadOnlyList<object?>` interface (Count, indexer, enumeration).
+- Saxon-style accessors: `Head`, `Tail`, `IsEmpty`, `IsSingleNode`, `AsSingleNode()`.
+
+Required by `PhoenixmlDb.Xslt 1.3.7` for the new
+`TransformAsync(XdmSequence)` / `TransformToSequenceAsync` overloads.
+
 ## 1.1.1 — 2026-05-09
 
 ### Added
