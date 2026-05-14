@@ -1236,6 +1236,62 @@ public readonly record struct XsTypedString(string Value, string TypeName)
 }
 
 /// <summary>
+/// Tags an integer-typed atomic value with its declared XSD type name so
+/// <c>instance of</c> can distinguish between e.g. xs:long, xs:nonNegativeInteger,
+/// xs:positiveInteger, etc. Without this wrapper, all integer subtypes collapse
+/// to CLR <c>long</c>, so <c>xs:long(1) instance of xs:nonNegativeInteger</c>
+/// incorrectly returns <c>true</c> (the value fits in range, but the declared
+/// types are siblings under xs:integer, not parent/child).
+/// </summary>
+/// <remarks>
+/// XSD integer subtype hierarchy:
+/// <list type="bullet">
+///   <item>xs:integer
+///     <list type="bullet">
+///       <item>xs:nonPositiveInteger → xs:negativeInteger</item>
+///       <item>xs:long → xs:int → xs:short → xs:byte</item>
+///       <item>xs:nonNegativeInteger → { xs:positiveInteger, xs:unsignedLong → xs:unsignedInt → xs:unsignedShort → xs:unsignedByte }</item>
+///     </list>
+///   </item>
+/// </list>
+/// Mirrors <see cref="XsTypedString"/>; same usage pattern (constructors return
+/// the wrapper, downstream operators unwrap to the CLR <c>long</c> for arithmetic
+/// and re-wrap when re-tagging is required).
+/// </remarks>
+public readonly record struct XsTypedInteger(long Value, string TypeName)
+{
+    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// True when this value's tagged type is the same as <paramref name="targetType"/>
+    /// or derived from it by restriction in the XSD integer hierarchy.
+    /// </summary>
+    public bool IsSubtypeOf(string targetType)
+    {
+        if (TypeName == targetType) return true;
+        return GetAncestors(TypeName).Contains(targetType);
+    }
+
+    private static HashSet<string> GetAncestors(string typeName) => typeName switch
+    {
+        "byte" => new() { "short", "int", "long", "integer", "decimal" },
+        "short" => new() { "int", "long", "integer", "decimal" },
+        "int" => new() { "long", "integer", "decimal" },
+        "long" => new() { "integer", "decimal" },
+        "negativeInteger" => new() { "nonPositiveInteger", "integer", "decimal" },
+        "nonPositiveInteger" => new() { "integer", "decimal" },
+        "positiveInteger" => new() { "nonNegativeInteger", "integer", "decimal" },
+        "unsignedByte" => new() { "unsignedShort", "unsignedInt", "unsignedLong", "nonNegativeInteger", "integer", "decimal" },
+        "unsignedShort" => new() { "unsignedInt", "unsignedLong", "nonNegativeInteger", "integer", "decimal" },
+        "unsignedInt" => new() { "unsignedLong", "nonNegativeInteger", "integer", "decimal" },
+        "unsignedLong" => new() { "nonNegativeInteger", "integer", "decimal" },
+        "nonNegativeInteger" => new() { "integer", "decimal" },
+        "integer" => new() { "decimal" },
+        _ => new()
+    };
+}
+
+/// <summary>
 /// Represents an XDM atomic value — a typed, immutable value from the XPath/XQuery type system.
 /// </summary>
 /// <remarks>
