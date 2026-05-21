@@ -710,6 +710,78 @@ public class XmlDocumentParserTests
 
     #endregion
 
+    #region Schema-aware type annotations
+
+    [Fact]
+    public void Parse_SchemaValidatedElement_PopulatesTypeAnnotation()
+    {
+        // Element <n> declared as xs:integer in the schema; after a schema-validating
+        // parse the resulting XdmElement should carry TypeAnnotation = xs:integer
+        // instead of the default xs:untyped.
+        const string schemaXml = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="n" type="xs:integer"/>
+            </xs:schema>
+            """;
+        var schemas = new System.Xml.Schema.XmlSchemaSet();
+        using (var schemaReader = XmlReader.Create(new System.IO.StringReader(schemaXml)))
+            schemas.Add(null, schemaReader);
+        schemas.Compile();
+
+        var parser = CreateParser();
+        using var reader = new System.IO.StringReader("<n>42</n>");
+        var result = parser.Parse(reader, documentUri: null, schemas);
+
+        var element = result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "n");
+        element.TypeAnnotation.LocalName.Should().Be("integer");
+        element.TypeAnnotation.Namespace.Should().Be(NamespaceId.Xsd);
+    }
+
+    [Fact]
+    public void Parse_SchemaValidatedAttribute_PopulatesTypeAnnotation()
+    {
+        // Attribute @count declared as xs:int; after schema-validating parse the
+        // resulting XdmAttribute should carry TypeAnnotation = xs:int.
+        const string schemaXml = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="root">
+                <xs:complexType>
+                  <xs:attribute name="count" type="xs:int" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+            """;
+        var schemas = new System.Xml.Schema.XmlSchemaSet();
+        using (var schemaReader = XmlReader.Create(new System.IO.StringReader(schemaXml)))
+            schemas.Add(null, schemaReader);
+        schemas.Compile();
+
+        var parser = CreateParser();
+        using var reader = new System.IO.StringReader("<root count=\"7\"/>");
+        var result = parser.Parse(reader, documentUri: null, schemas);
+
+        var attr = result.Nodes.OfType<XdmAttribute>().Single(a => a.LocalName == "count");
+        attr.TypeAnnotation.LocalName.Should().Be("int");
+        attr.TypeAnnotation.Namespace.Should().Be(NamespaceId.Xsd);
+    }
+
+    [Fact]
+    public void Parse_WithoutSchema_LeavesTypeAnnotationAtUntypedDefault()
+    {
+        // Sanity check: the non-schema-aware code path leaves TypeAnnotation at the
+        // default Untyped (element) / UntypedAtomic (attribute) per XDM §5.10.7.
+        var parser = CreateParser();
+        var result = parser.Parse("<root count=\"7\"><n>42</n></root>");
+
+        var n = result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "n");
+        n.TypeAnnotation.Should().Be(XdmTypeName.Untyped);
+
+        var count = result.Nodes.OfType<XdmAttribute>().Single(a => a.LocalName == "count");
+        count.TypeAnnotation.Should().Be(XdmTypeName.UntypedAtomic);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private ParseResult ParseXml(string xml, string? documentUri = null, bool preserveWhitespace = false)

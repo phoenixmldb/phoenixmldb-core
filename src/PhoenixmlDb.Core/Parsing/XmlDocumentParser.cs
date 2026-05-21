@@ -266,6 +266,12 @@ public sealed class XmlDocumentParser
         // - the element has a union type and the selected MemberType is xs:ID (e.g., xs:ID | xs:integer)
         // For types derived from xs:ID by restriction, Datatype.TypeCode still reports Id.
         var isIdContent = false;
+        // Captured for the XdmElement.TypeAnnotation projection below.
+        // Schema-validating readers populate SchemaInfo.SchemaType only when a
+        // global element declaration matched (strict/lax). For union types, the
+        // MemberType is the selected branch — that's what XQuery's data-model
+        // expects on the element node (XDM §5.10.7).
+        System.Xml.XmlQualifiedName? elementSchemaTypeQName = null;
         if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo elemSchemaInfo)
         {
             var schemaType = elemSchemaInfo.SchemaType;
@@ -284,6 +290,9 @@ public sealed class XmlDocumentParser
                     memberType.Datatype?.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
                     isIdContent = true;
             }
+            // Prefer MemberType for unions so the annotation reflects the actually-matched branch.
+            elementSchemaTypeQName = elemSchemaInfo.MemberType?.QualifiedName
+                ?? elemSchemaInfo.SchemaType?.QualifiedName;
         }
 
         // Collect attributes
@@ -356,6 +365,8 @@ public sealed class XmlDocumentParser
 
         endElement:
 
+        var elementTypeAnnotation = ResolveSchemaTypeAnnotation(elementSchemaTypeQName, XdmTypeName.Untyped);
+
         var element = new XdmElement
         {
             Id = nodeId,
@@ -368,6 +379,7 @@ public sealed class XmlDocumentParser
             NamespaceDeclarations = namespaceDecls.ToImmutableArray(),
             Children = children.ToImmutableArray(),
             IsIdContent = isIdContent,
+            TypeAnnotation = elementTypeAnnotation,
             SourceLine = sourceLine,
             SourceColumn = sourceCol
         };
@@ -385,6 +397,26 @@ public sealed class XmlDocumentParser
     /// Computes the string value of an element from its children (text + nested elements).
     /// Walks _nodes to resolve child NodeIds.
     /// </summary>
+    /// <summary>
+    /// Maps an <see cref="System.Xml.XmlQualifiedName"/> from the XmlReader's SchemaInfo
+    /// to an <see cref="XdmTypeName"/> suitable for <see cref="XdmElement.TypeAnnotation"/>
+    /// or <see cref="XdmAttribute.TypeAnnotation"/>. Returns <paramref name="fallback"/>
+    /// when no schema type was reported, when the type is anonymous (no QualifiedName),
+    /// or when the qualified name has no local part.
+    /// </summary>
+    private XdmTypeName ResolveSchemaTypeAnnotation(System.Xml.XmlQualifiedName? schemaTypeQName, XdmTypeName fallback)
+    {
+        if (schemaTypeQName == null || string.IsNullOrEmpty(schemaTypeQName.Name))
+            return fallback;
+        var nsUri = schemaTypeQName.Namespace ?? "";
+        // xsd built-ins use the well-known NamespaceId.Xsd interning slot so that
+        // downstream type-matching (e.g. instance-of, atomization) sees a stable id.
+        var nsId = nsUri == "http://www.w3.org/2001/XMLSchema"
+            ? NamespaceId.Xsd
+            : _namespaceResolver(nsUri);
+        return new XdmTypeName(nsId, schemaTypeQName.Name);
+    }
+
     private string ComputeStringValue(List<NodeId> children)
     {
         if (children.Count == 0) return "";
@@ -455,6 +487,17 @@ public sealed class XmlDocumentParser
             }
         }
 
+        // Pull the attribute's schema type for TypeAnnotation. XSD-validated attributes
+        // expose their typed value through SchemaInfo; treat the union MemberType as the
+        // chosen branch so the annotation matches the value actually consumed by atomization.
+        System.Xml.XmlQualifiedName? attrSchemaTypeQName = null;
+        if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo attrSchemaInfo)
+        {
+            attrSchemaTypeQName = attrSchemaInfo.MemberType?.QualifiedName
+                ?? attrSchemaInfo.SchemaType?.QualifiedName;
+        }
+        var attrTypeAnnotation = ResolveSchemaTypeAnnotation(attrSchemaTypeQName, XdmTypeName.UntypedAtomic);
+
         var attribute = new XdmAttribute
         {
             Id = nodeId,
@@ -466,6 +509,7 @@ public sealed class XmlDocumentParser
             Value = value,
             IsId = isId,
             IsIdRef = isIdRef,
+            TypeAnnotation = attrTypeAnnotation,
             SourceLine = sourceLine,
             SourceColumn = sourceCol
         };
