@@ -1,5 +1,45 @@
 # Release History
 
+## 1.1.5 — 2026-05-23
+
+### Fix: `XdmAttribute.TypeAnnotation` populated from schema validation
+
+Element-level `TypeAnnotation` was wired in 1.1.4 (PR #59 — "populate
+XdmElement/XdmAttribute.TypeAnnotation from XSD SchemaInfo") but the
+attribute path actually only set the element annotation. Schema-validated
+attributes arrived downstream still tagged `xs:untypedAtomic` regardless
+of their XSD declaration.
+
+`XmlDocumentParser.Parse(reader, documentUri, schemas)` now reads
+`reader.SchemaInfo.MemberType` / `SchemaInfo.SchemaType` while positioned
+on each attribute and resolves the result through the existing
+`ResolveSchemaTypeAnnotation` helper. The non-schema-aware code path is
+unaffected (SchemaInfo is null for non-validating readers, so the
+fallback to `UntypedAtomic` kicks in).
+
+Unblocks the schema-aware XQuery construction work
+(`Constr-cont-constrmod-9/10` and related QT3 tests).
+
+## 1.1.4 — 2026-05-22
+
+### New: `XdmElement.TypeAnnotation` and `XdmAttribute.TypeAnnotation` from XSD SchemaInfo (PR #59)
+
+Schema-validated documents loaded via `XdmDocumentStore.LoadFromStringWithSchema`
+now carry XSD type annotations on element nodes. `XmlDocumentParser` reads
+`reader.SchemaInfo.MemberType` / `SchemaInfo.SchemaType` while positioned on
+each element and resolves through a `ResolveSchemaTypeAnnotation` helper.
+
+Also multi-targets `net8.0;net10.0`.
+
+## 1.1.3 — 2026-05-15
+
+### New: `XsTypedInteger` wrapper for XSD integer subtype identity
+
+Adds `XsTypedInteger` to carry XSD `integer` and its subtypes (`long`, `int`,
+`short`, `byte`, `nonNegativeInteger`, etc.) through the XDM type system with
+their original declared type preserved, enabling correct `instance of xs:long`
+and similar type-identity checks.
+
 ## 1.1.2 — 2026-05-12
 
 ### New: `XdmSequence` — public wire-format for chaining transformations

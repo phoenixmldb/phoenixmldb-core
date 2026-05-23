@@ -6,7 +6,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.1.4</Version>
+    <Version>1.1.5</Version>
+    <PackageReleaseNotes>
+      Fix: XdmAttribute.TypeAnnotation now populated from XmlReader.SchemaInfo
+      during schema-validated load (XmlDocumentParser.Parse with XmlSchemaSet).
+      Element-level TypeAnnotation was wired in 1.1.4 (PR #59) but the attribute
+      path was missed — schema-validated attributes arrived downstream with
+      TypeAnnotation = UntypedAtomic. Affects any consumer using
+      XdmDocumentStore.LoadFromStringWithSchema and querying attribute types.
+    </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-all</AnalysisLevel>
