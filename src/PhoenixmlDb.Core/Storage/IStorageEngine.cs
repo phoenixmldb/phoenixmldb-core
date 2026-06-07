@@ -36,6 +36,22 @@ public interface IStorageEngine : IDisposable, IAsyncDisposable
     bool IsReadOnly { get; }
 
     /// <summary>
+    /// Creates a consistent backup of the database to the specified directory.
+    /// Safe to call while the database is actively being read/written; the resulting
+    /// backup reflects a single MVCC snapshot.
+    /// </summary>
+    /// <param name="destinationPath">Directory to write the backup into. Created if missing.</param>
+    /// <param name="compact">If true, compacts the database (removes free pages). Slower
+    /// but produces a smaller backup.</param>
+    /// <remarks>
+    /// Distinguished from <see cref="SnapshotAsync"/> by output target: this writes files
+    /// to a directory (engine-native format); <see cref="SnapshotAsync"/> streams to an
+    /// arbitrary <see cref="Stream"/>. Choose based on whether the consumer wants files
+    /// or a stream.
+    /// </remarks>
+    void BackupTo(string destinationPath, bool compact);
+
+    /// <summary>
     /// Writes a consistent snapshot of the entire storage environment to <paramref name="output"/>.
     /// </summary>
     /// <param name="output">Stream that receives the snapshot bytes. Not closed by this method.</param>
