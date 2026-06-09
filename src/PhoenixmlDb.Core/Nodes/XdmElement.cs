@@ -146,15 +146,21 @@ public sealed class XdmElement : XdmNode
     /// <summary>
     /// An empty, immutable attribute list for elements with no attributes.
     /// </summary>
-    public static IReadOnlyList<NodeId> EmptyAttributes => ImmutableArray<NodeId>.Empty;
+    /// <remarks>
+    /// Cached as a static <c>readonly</c> field so the <see cref="ImmutableArray{T}"/>
+    /// struct is boxed to <see cref="IReadOnlyList{T}"/> exactly once at type init.
+    /// Returning the struct directly from an expression-bodied property would box on
+    /// every call.
+    /// </remarks>
+    public static readonly IReadOnlyList<NodeId> EmptyAttributes = ImmutableArray<NodeId>.Empty;
 
     /// <summary>
     /// An empty, immutable children list for leaf elements (no child nodes).
     /// </summary>
-    public static IReadOnlyList<NodeId> EmptyChildren => ImmutableArray<NodeId>.Empty;
+    public static readonly IReadOnlyList<NodeId> EmptyChildren = ImmutableArray<NodeId>.Empty;
 
     /// <summary>
     /// An empty, immutable namespace declarations list for elements with no namespace declarations.
     /// </summary>
-    public static IReadOnlyList<NamespaceBinding> EmptyNamespaceDeclarations => ImmutableArray<NamespaceBinding>.Empty;
+    public static readonly IReadOnlyList<NamespaceBinding> EmptyNamespaceDeclarations = ImmutableArray<NamespaceBinding>.Empty;
 }

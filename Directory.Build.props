@@ -6,14 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.1.5</Version>
+    <Version>1.1.6</Version>
     <PackageReleaseNotes>
-      Fix: XdmAttribute.TypeAnnotation now populated from XmlReader.SchemaInfo
-      during schema-validated load (XmlDocumentParser.Parse with XmlSchemaSet).
-      Element-level TypeAnnotation was wired in 1.1.4 (PR #59) but the attribute
-      path was missed — schema-validated attributes arrived downstream with
-      TypeAnnotation = UntypedAtomic. Affects any consumer using
-      XdmDocumentStore.LoadFromStringWithSchema and querying attribute types.
+      Perf: XdmElement.EmptyAttributes / EmptyChildren / EmptyNamespaceDeclarations cached as static readonly IReadOnlyList&lt;T&gt; fields. They previously returned ImmutableArray&lt;T&gt;.Empty from an expression-bodied property, which boxed the struct to IReadOnlyList&lt;T&gt; on every read. The cached references box once at type init, eliminating ~20% of remaining streaming-allocation churn observed downstream in PhoenixmlDb.Xslt.
     </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

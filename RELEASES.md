@@ -1,5 +1,23 @@
 # Release History
 
+## 1.1.6 — 2026-06-09
+
+### Perf: `XdmElement.Empty*` accessors cached as static fields
+
+`XdmElement.EmptyAttributes`, `EmptyChildren`, and `EmptyNamespaceDeclarations`
+were expression-bodied properties returning `ImmutableArray<T>.Empty`. Because
+the property return type is `IReadOnlyList<T>` and `ImmutableArray<T>` is a
+struct, every read boxed the struct into a fresh heap object that wraps the
+empty array. Switched to `public static readonly IReadOnlyList<T> = ImmutableArray<T>.Empty`
+so the box happens exactly once at type init and all subsequent reads return
+the same reference.
+
+Surfaced while profiling PhoenixmlDb.Xslt streaming-identity (1M items): the
+two `ImmutableArray<>` boxes accounted for ~20% of remaining streaming
+allocation after the per-element pool work. No behavior change; existing
+callers continue to work because the type and value of the static remain
+`IReadOnlyList<NodeId>` / `IReadOnlyList<NamespaceBinding>`.
+
 ## 1.1.5 — 2026-05-23
 
 ### Fix: `XdmAttribute.TypeAnnotation` populated from schema validation
