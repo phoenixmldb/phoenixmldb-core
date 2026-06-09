@@ -143,24 +143,26 @@ public sealed class XdmElement : XdmNode
 
     public override XdmValue TypedValue => XdmValue.UntypedAtomic(StringValue);
 
+    // Cached boxed references for the Empty* accessors. ImmutableArray<T> is a
+    // struct; returning ImmutableArray<T>.Empty from an expression-bodied property
+    // typed as IReadOnlyList<T> boxes on every read. Holding the boxed reference in
+    // a static readonly field boxes exactly once at type init.
+    private static readonly IReadOnlyList<NodeId> s_emptyAttributes = ImmutableArray<NodeId>.Empty;
+    private static readonly IReadOnlyList<NodeId> s_emptyChildren = ImmutableArray<NodeId>.Empty;
+    private static readonly IReadOnlyList<NamespaceBinding> s_emptyNamespaceDeclarations = ImmutableArray<NamespaceBinding>.Empty;
+
     /// <summary>
     /// An empty, immutable attribute list for elements with no attributes.
     /// </summary>
-    /// <remarks>
-    /// Cached as a static <c>readonly</c> field so the <see cref="ImmutableArray{T}"/>
-    /// struct is boxed to <see cref="IReadOnlyList{T}"/> exactly once at type init.
-    /// Returning the struct directly from an expression-bodied property would box on
-    /// every call.
-    /// </remarks>
-    public static readonly IReadOnlyList<NodeId> EmptyAttributes = ImmutableArray<NodeId>.Empty;
+    public static IReadOnlyList<NodeId> EmptyAttributes => s_emptyAttributes;
 
     /// <summary>
     /// An empty, immutable children list for leaf elements (no child nodes).
     /// </summary>
-    public static readonly IReadOnlyList<NodeId> EmptyChildren = ImmutableArray<NodeId>.Empty;
+    public static IReadOnlyList<NodeId> EmptyChildren => s_emptyChildren;
 
     /// <summary>
     /// An empty, immutable namespace declarations list for elements with no namespace declarations.
     /// </summary>
-    public static readonly IReadOnlyList<NamespaceBinding> EmptyNamespaceDeclarations = ImmutableArray<NamespaceBinding>.Empty;
+    public static IReadOnlyList<NamespaceBinding> EmptyNamespaceDeclarations => s_emptyNamespaceDeclarations;
 }

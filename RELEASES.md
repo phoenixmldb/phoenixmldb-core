@@ -1,6 +1,28 @@
 # Release History
 
-## 1.1.6 — 2026-06-09
+## 1.1.7 — 2026-06-09
+
+### Fix: restore binary compatibility for `XdmElement.Empty*` accessors
+
+1.1.6 changed `EmptyAttributes`, `EmptyChildren`, and `EmptyNamespaceDeclarations`
+from expression-bodied properties to `public static readonly` fields. The cache
+behavior was correct, but **this was a binary-breaking change**: existing
+consumers compiled against 1.1.5 (most notably `PhoenixmlDb.XQuery 1.4.x`)
+invoke the `get_EmptyAttributes()` method, which no longer exists. Calls
+throw `MissingMethodException` at runtime.
+
+1.1.7 keeps the perf win — `ImmutableArray<T>.Empty` is boxed exactly once at
+type init into a `private static readonly` field — and restores the original
+property surface that consumers expect:
+
+```csharp
+private static readonly IReadOnlyList<NodeId> s_emptyAttributes = ImmutableArray<NodeId>.Empty;
+public static IReadOnlyList<NodeId> EmptyAttributes => s_emptyAttributes;
+```
+
+**Anyone who already pinned 1.1.6 should upgrade.**
+
+## 1.1.6 — 2026-06-09 (binary-breaking, do not use — see 1.1.7)
 
 ### Perf: `XdmElement.Empty*` accessors cached as static fields
 

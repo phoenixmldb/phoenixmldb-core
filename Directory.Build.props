@@ -6,9 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.1.6</Version>
+    <Version>1.1.7</Version>
     <PackageReleaseNotes>
-      Perf: XdmElement.EmptyAttributes / EmptyChildren / EmptyNamespaceDeclarations cached as static readonly IReadOnlyList&lt;T&gt; fields. They previously returned ImmutableArray&lt;T&gt;.Empty from an expression-bodied property, which boxed the struct to IReadOnlyList&lt;T&gt; on every read. The cached references box once at type init, eliminating ~20% of remaining streaming-allocation churn observed downstream in PhoenixmlDb.Xslt.
+      Fix: 1.1.6 changed XdmElement.Empty* from properties to fields, which is a binary-breaking change — consumers compiled against 1.1.5 (e.g. PhoenixmlDb.XQuery 1.4.x) hit MissingMethodException calling get_EmptyAttributes() at runtime. 1.1.7 restores the property surface while keeping the boxing-once cache in private static readonly fields. Anyone who pinned 1.1.6 should upgrade.
+      Original 1.1.6 perf intent preserved: ImmutableArray&lt;T&gt;.Empty boxes once to IReadOnlyList&lt;T&gt; at type init rather than on every property read. Surfaced ~20% of remaining streaming-allocation churn observed downstream in PhoenixmlDb.Xslt 1.4.4.
     </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
