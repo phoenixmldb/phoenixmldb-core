@@ -576,6 +576,16 @@ public interface IContainer
         string key,
         object value,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores <paramref name="values"/> as multi-valued metadata <paramref name="metadataName"/>
+    /// for <paramref name="documentName"/> and indexes each value (replacing prior values for that
+    /// name). Use for index-backed multi-value metadata such as tags. Defaults to a no-op so
+    /// implementations without indexing stay source-compatible.
+    /// </summary>
+    ValueTask SetIndexedValuesAsync(string documentName, string metadataName,
+        IReadOnlyCollection<string> values, CancellationToken cancellationToken = default)
+        => ValueTask.CompletedTask;
 }
 
 /// <summary>
