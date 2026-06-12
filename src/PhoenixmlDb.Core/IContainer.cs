@@ -586,7 +586,34 @@ public interface IContainer
     ValueTask SetIndexedValuesAsync(string documentName, string metadataName,
         IReadOnlyCollection<string> values, CancellationToken cancellationToken = default)
         => ValueTask.CompletedTask;
+
+    /// <summary>
+    /// Writes multiple documents. Engine implementations batch them into a single write
+    /// transaction (one commit) for bulk-load throughput; this default falls back to
+    /// sequential single-document writes so other implementations keep working.
+    /// Returns the number of documents written.
+    /// </summary>
+    ValueTask<int> PutDocumentsAsync(IEnumerable<DocumentInput> documents, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(documents);
+        return PutDocumentsSequentiallyAsync(this, documents, cancellationToken);
+
+        static async ValueTask<int> PutDocumentsSequentiallyAsync(IContainer self, IEnumerable<DocumentInput> docs, CancellationToken ct)
+        {
+            var n = 0;
+            foreach (var d in docs)
+            {
+                ct.ThrowIfCancellationRequested();
+                await self.PutDocumentAsync(d.Name, d.Content, d.Options, ct).ConfigureAwait(false);
+                n++;
+            }
+            return n;
+        }
+    }
 }
+
+/// <summary>One document to write in a batch: name, content, and optional per-document options.</summary>
+public sealed record DocumentInput(string Name, string Content, DocumentOptions? Options = null);
 
 /// <summary>
 /// Configuration options for an <see cref="IContainer"/>, controlling indexing, namespace
