@@ -1258,9 +1258,32 @@ public readonly record struct XsTypedString(string Value, string TypeName)
 /// the wrapper, downstream operators unwrap to the CLR <c>long</c> for arithmetic
 /// and re-wrap when re-tagging is required).
 /// </remarks>
-public readonly record struct XsTypedInteger(long Value, string TypeName)
+public readonly record struct XsTypedInteger(long Value, string TypeName) : IConvertible
 {
     public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // IConvertible — delegate to the underlying long so the .NET conversion infrastructure
+    // (Convert.ToDouble/ToDecimal/ToInt64, used throughout the numeric operators and
+    // aggregate functions) accepts a derived-integer-typed value instead of throwing
+    // InvalidCastException. ToDecimal/ToInt64 are exact; callers that need exact behaviour
+    // for values beyond double precision must unwrap to Value directly (see Negate).
+    TypeCode IConvertible.GetTypeCode() => TypeCode.Int64;
+    bool IConvertible.ToBoolean(IFormatProvider? p) => Value != 0;
+    byte IConvertible.ToByte(IFormatProvider? p) => ((IConvertible)Value).ToByte(p);
+    char IConvertible.ToChar(IFormatProvider? p) => ((IConvertible)Value).ToChar(p);
+    DateTime IConvertible.ToDateTime(IFormatProvider? p) => ((IConvertible)Value).ToDateTime(p);
+    decimal IConvertible.ToDecimal(IFormatProvider? p) => Value;
+    double IConvertible.ToDouble(IFormatProvider? p) => Value;
+    short IConvertible.ToInt16(IFormatProvider? p) => ((IConvertible)Value).ToInt16(p);
+    int IConvertible.ToInt32(IFormatProvider? p) => ((IConvertible)Value).ToInt32(p);
+    long IConvertible.ToInt64(IFormatProvider? p) => Value;
+    sbyte IConvertible.ToSByte(IFormatProvider? p) => ((IConvertible)Value).ToSByte(p);
+    float IConvertible.ToSingle(IFormatProvider? p) => Value;
+    string IConvertible.ToString(IFormatProvider? p) => Value.ToString(p);
+    object IConvertible.ToType(Type t, IFormatProvider? p) => ((IConvertible)Value).ToType(t, p);
+    ushort IConvertible.ToUInt16(IFormatProvider? p) => ((IConvertible)Value).ToUInt16(p);
+    uint IConvertible.ToUInt32(IFormatProvider? p) => ((IConvertible)Value).ToUInt32(p);
+    ulong IConvertible.ToUInt64(IFormatProvider? p) => ((IConvertible)Value).ToUInt64(p);
 
     /// <summary>
     /// True when this value's tagged type is the same as <paramref name="targetType"/>
