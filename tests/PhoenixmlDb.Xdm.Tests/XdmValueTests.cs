@@ -900,4 +900,29 @@ public class XdmValueTests
     }
 
     #endregion
+
+    #region XsTypedInteger IConvertible
+
+    [Fact]
+    public void XsTypedInteger_ConvertToDecimal_IsExact()
+    {
+        // Derived integer types (xs:long etc.) flow through the engine as XsTypedInteger.
+        // Numeric operators/aggregates route through Convert.ToDecimal/ToInt64/ToDouble;
+        // before XsTypedInteger implemented IConvertible these threw InvalidCastException.
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var v = new XsTypedInteger(92233720368547758L, "long");
+        Convert.ToDecimal(v, ci).Should().Be(92233720368547758m);
+        Convert.ToInt64(v, ci).Should().Be(92233720368547758L);
+        Convert.ToDouble(v, ci).Should().Be(92233720368547758d);
+    }
+
+    [Fact]
+    public void XsTypedInteger_ConvertToBoolean_FollowsValue()
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        Convert.ToBoolean(new XsTypedInteger(0, "int"), ci).Should().BeFalse();
+        Convert.ToBoolean(new XsTypedInteger(5, "int"), ci).Should().BeTrue();
+    }
+
+    #endregion
 }
