@@ -1,5 +1,11 @@
 # Release History
 
+## 1.1.8 — 2026-06-13
+
+### Fix: `XsTypedInteger` implements `IConvertible`
+
+Derived integer types (`xs:long`, `xs:int`, `xs:short`, …) are carried as `XsTypedInteger`, which previously did not implement `IConvertible`. Any consumer routing such a value through `Convert.ToDouble` / `Convert.ToDecimal` / `Convert.ToInt64` got an `InvalidCastException`. The wrapper now delegates `IConvertible` to its underlying `long` (`ToDecimal`/`ToInt64` exact), so numeric operators and aggregate functions in PhoenixmlDb.XQuery 1.4.4 work over derived integer types. No API surface change.
+
 ## 1.1.7 — 2026-06-09
 
 ### Fix: restore binary compatibility for `XdmElement.Empty*` accessors
