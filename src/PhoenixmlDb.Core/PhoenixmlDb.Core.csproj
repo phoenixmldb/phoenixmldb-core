@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="PhoenixmlDb.Xslt" />
     <InternalsVisibleTo Include="PhoenixmlDb.XQuery" />
+    <InternalsVisibleTo Include="PhoenixmlDb.Xdm.Tests" />
   </ItemGroup>
 
 </Project>
