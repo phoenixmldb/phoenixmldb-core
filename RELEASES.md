@@ -1,5 +1,11 @@
 # Release History
 
+## 1.1.9 — 2026-06-16
+
+### Shared character escaper for output serialization
+
+Adds `PhoenixmlDb.Xdm.Serialization.CharacterEscaper`, the single source of serialized-output character escaping (XML text, XML attribute, and the JSON per-character escape rules) shared by the XSLT and XQuery engines. It is `internal`, reaching both engines via the existing `InternalsVisibleTo`. The XSLT engine had grown one canonical copy internally; this lifts it to Core so the XQuery engine escapes identically, ending the divergence where attribute-value whitespace was escaped on some paths but not others. No public API change.
+
 ## 1.1.8 — 2026-06-13
 
 ### Fix: `XsTypedInteger` implements `IConvertible`
