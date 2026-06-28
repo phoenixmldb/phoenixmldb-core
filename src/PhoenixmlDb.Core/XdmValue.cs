@@ -827,6 +827,105 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
         var trimmed = frac.TrimEnd('0');
         sb.Append('.').Append(trimmed);
     }
+
+    // ----- Proleptic-Gregorian arithmetic (valid for years <= 0 and negative years) -----
+
+    /// <summary>Floor division — rounds toward negative infinity (unlike C# integer division).</summary>
+    internal static long FloorDiv(long a, long b)
+    {
+        var q = a / b;
+        if ((a % b != 0) && ((a < 0) != (b < 0))) q--;
+        return q;
+    }
+
+    /// <summary>Floor modulo — result has the same sign as the divisor.</summary>
+    internal static long FloorMod(long a, long b) => a - FloorDiv(a, b) * b;
+
+    /// <summary>
+    /// Days since 1970-01-01 for any proleptic-Gregorian y/m/d (Howard Hinnant's algorithm,
+    /// correct for negative years).
+    /// </summary>
+    internal static long DaysFromCivil(long y, int m, int d)
+    {
+        y -= m <= 2 ? 1 : 0;
+        var era = (y >= 0 ? y : y - 399) / 400;
+        var yoe = y - era * 400;
+        var doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+        var doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        return era * 146097 + doe - 719468;
+    }
+
+    /// <summary>
+    /// Converts a day count (since 1970-01-01) back to proleptic-Gregorian (year, month, day).
+    /// </summary>
+    internal static (long Year, int Month, int Day) CivilFromDays(long z)
+    {
+        z += 719468;
+        var era = (z >= 0 ? z : z - 146096) / 146097;
+        var doe = z - era * 146097;
+        var yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        var y = yoe + era * 400;
+        var doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        var mp = (5 * doy + 2) / 153;
+        var d = (int)(doy - (153 * mp + 2) / 5 + 1);
+        var m = (int)(mp < 10 ? mp + 3 : mp - 9);
+        return (y + (m <= 2 ? 1 : 0), m, d);
+    }
+
+    /// <summary>
+    /// Builds an <see cref="XsDateTime"/> from a proleptic (year, month, day) and a
+    /// time-of-day, setting ExtendedYear when the year falls outside the .NET 1..9999 range.
+    /// </summary>
+    private static XsDateTime FromProleptic(long year, int month, int day, TimeOnly timeOfDay, int fractionalTicks, TimeSpan offset, bool hasTimezone)
+    {
+        // timeOfDay carries whole-second precision; fractionalTicks carries the sub-second remainder.
+        var ticksOfDay = timeOfDay.Ticks - timeOfDay.Ticks % TimeSpan.TicksPerSecond + fractionalTicks;
+        if (year is >= 1 and <= 9999)
+        {
+            var dt = new DateTime((int)year, month, day, 0, 0, 0).AddTicks(ticksOfDay);
+            return new XsDateTime(new DateTimeOffset(dt, offset), hasTimezone);
+        }
+        var isLeap = IsLeapYearProleptic(year);
+        var clampedYear = isLeap ? 4 : 1;
+        var clamped = new DateTime(clampedYear, month, day, 0, 0, 0).AddTicks(ticksOfDay);
+        return new XsDateTime(new DateTimeOffset(clamped, offset), hasTimezone) { ExtendedYear = year };
+    }
+
+    /// <summary>
+    /// Adds (or subtracts, when negative) a number of months using proleptic-Gregorian
+    /// month arithmetic on the effective year, clamping the day to the new month's length.
+    /// </summary>
+    public XsDateTime AddMonths(long months)
+    {
+        var total = EffectiveYear * 12 + (Value.Month - 1) + months;
+        var newYear = FloorDiv(total, 12);
+        var newMonth = (int)FloorMod(total, 12) + 1;
+        var maxDay = DaysInMonthProleptic(newYear, newMonth);
+        var newDay = Math.Min(Value.Day, maxDay);
+        var timeOfDay = TimeOnly.FromTimeSpan(Value.TimeOfDay);
+        return FromProleptic(newYear, newMonth, newDay, timeOfDay, FractionalTicks, Value.Offset, HasTimezone);
+    }
+
+    /// <summary>
+    /// Adds a duration (dayTimeDuration) using a proleptic day-number conversion so that
+    /// crossings below year 1 are handled uniformly. Whole days are added via the day-number
+    /// path; the remaining time-of-day is applied with day carry.
+    /// </summary>
+    public XsDateTime Add(TimeSpan delta)
+    {
+        // Current time-of-day ticks (including fractional seconds).
+        var todTicks = Value.TimeOfDay.Ticks;
+        var totalTicks = todTicks + delta.Ticks;
+        var dayCarry = FloorDiv(totalTicks, TimeSpan.TicksPerDay);
+        var newTodTicks = FloorMod(totalTicks, TimeSpan.TicksPerDay);
+
+        var baseDays = DaysFromCivil(EffectiveYear, Value.Month, Value.Day);
+        var (y, m, d) = CivilFromDays(baseDays + dayCarry);
+
+        var timeOfDay = new TimeOnly(newTodTicks - newTodTicks % TimeSpan.TicksPerSecond);
+        var newFractional = (int)(newTodTicks % TimeSpan.TicksPerSecond);
+        return FromProleptic(y, m, d, timeOfDay, newFractional, Value.Offset, HasTimezone);
+    }
 }
 
 /// <summary>
@@ -1028,6 +1127,42 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
         sb.Append(abs.Hours.ToString("D2", CultureInfo.InvariantCulture));
         sb.Append(':');
         sb.Append(abs.Minutes.ToString("D2", CultureInfo.InvariantCulture));
+    }
+
+    // ----- Proleptic-Gregorian arithmetic (valid for years <= 0 and negative years) -----
+
+    private static XsDate FromProleptic(long year, int month, int day, TimeSpan? timezone)
+    {
+        if (year is >= 1 and <= 9999)
+            return new XsDate(new DateOnly((int)year, month, day), timezone);
+        var isLeap = XsDateTime.IsLeapYearProleptic(year);
+        var clampedYear = isLeap ? 4 : 1;
+        return new XsDate(new DateOnly(clampedYear, month, day), timezone) { ExtendedYear = year };
+    }
+
+    /// <summary>
+    /// Adds (or subtracts, when negative) a number of months using proleptic-Gregorian
+    /// month arithmetic on the effective year, clamping the day to the new month's length.
+    /// </summary>
+    public XsDate AddMonths(long months)
+    {
+        var total = EffectiveYear * 12 + (Date.Month - 1) + months;
+        var newYear = XsDateTime.FloorDiv(total, 12);
+        var newMonth = (int)XsDateTime.FloorMod(total, 12) + 1;
+        var maxDay = XsDateTime.DaysInMonthProleptic(newYear, newMonth);
+        var newDay = Math.Min(Date.Day, maxDay);
+        return FromProleptic(newYear, newMonth, newDay, Timezone);
+    }
+
+    /// <summary>
+    /// Adds (or subtracts, when negative) a number of days using a proleptic day-number
+    /// conversion so that crossings below year 1 are handled uniformly.
+    /// </summary>
+    public XsDate AddDays(long days)
+    {
+        var baseDays = XsDateTime.DaysFromCivil(EffectiveYear, Date.Month, Date.Day);
+        var (y, m, d) = XsDateTime.CivilFromDays(baseDays + days);
+        return FromProleptic(y, m, d, Timezone);
     }
 }
 
