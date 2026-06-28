@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.1.9</Version>
+    <Version>1.2.0</Version>
     <PackageReleaseNotes>
-      Adds the shared PhoenixmlDb.Xdm.Serialization.CharacterEscaper, the single source of serialized-output character escaping (XML text, XML attribute, JSON per-character rules) for the XSLT and XQuery engines. Internal, reaching both engines via InternalsVisibleTo. No public API change. See RELEASES.md for full notes.
+      Adds proleptic-Gregorian date arithmetic to XsDate and XsDateTime (AddMonths/AddDays/Add), computing correctly for years at and below 1 (including year 0 and negative years) via the ExtendedYear carrier instead of overflowing .NET's DateOnly/DateTimeOffset floor at year 1. Additive; no existing behavior changes, no public API removed. See RELEASES.md for full notes.
     </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

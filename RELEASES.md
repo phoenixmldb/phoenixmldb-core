@@ -1,5 +1,11 @@
 # Release History
 
+## 1.2.0 — 2026-06-27
+
+### Proleptic-Gregorian date arithmetic on `XsDate` / `XsDateTime`
+
+Adds `AddMonths`, `AddDays`, and `Add(TimeSpan)` to `XsDate` and `XsDateTime`. These compute on the proleptic Gregorian calendar — correct across the year 1 / year 0 / negative-year boundary — using the existing `ExtendedYear` carrier rather than the underlying `DateOnly`/`DateTimeOffset`, which floor at year 1 and would overflow. Month arithmetic clamps the day to the target month's length; day and time arithmetic convert through a continuous day number (Howard Hinnant's `days_from_civil`/`civil_from_days`) so results below year 1 land on the right calendar date. A result year outside .NET's 1–9999 range is preserved in `ExtendedYear`. Additive only — no existing behavior changes and no public API removed.
+
 ## 1.1.9 — 2026-06-16
 
 ### Shared character escaper for output serialization
