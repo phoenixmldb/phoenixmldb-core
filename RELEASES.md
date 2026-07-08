@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Store-global tree ordinal for document order
+
+Adds `XdmNode.TreeOrdinal` (a settable `ulong`, default 0) together with `XdmNode.CompareDocumentOrder(a, b)` and `XdmNode.DocumentOrderKey`, defining XDM document order as the pair `(TreeOrdinal, Id)`. `Id` (`NodeId`) is unique only within a single node store, so nodes drawn from independently-parsed sources could share an id; the tree ordinal groups nodes by their originating tree with a store-global counter, restoring a total, consistent order and a reliable identity key. The default of 0 leaves any node constructed without a store comparing purely by `Id`, so existing single-source ordering is unchanged. Additive only — no public API removed.
+
 ## 1.2.1 — 2026-07-07
 
 ### Linear string-value computation for large elements
