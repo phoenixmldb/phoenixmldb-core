@@ -59,6 +59,33 @@ public abstract class XdmNode
     public required NodeId Id { get; init; }
 
     /// <summary>
+    /// Store-global monotonic ordinal identifying the tree (parsed document or constructed
+    /// subtree) this node belongs to, used as the primary key of XDM document order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Id"/> (<see cref="NodeId"/>) is only unique within a single
+    /// <c>XdmDocumentStore</c>; nodes drawn from two independently-parsed stores can collide on
+    /// <see cref="NodeId"/>. Document order is therefore defined as the pair
+    /// <c>(TreeOrdinal, Id)</c>: <see cref="TreeOrdinal"/> groups nodes by their originating tree
+    /// with a store-global counter, and <see cref="Id"/> orders nodes within a tree.
+    /// </para>
+    /// <para>
+    /// The default is <c>0</c> so that nodes constructed without a store (unit tests, ad-hoc
+    /// construction) compare purely by <see cref="Id"/>, preserving legacy single-store ordering.
+    /// The XQuery store assigns parse-time ordinals before construction-time ordinals within a
+    /// query, so constructed trees receive higher ordinals and continue to sort last.
+    /// </para>
+    /// <para>
+    /// The setter exists so the storage layer can stamp a tree's ordinal onto every node after
+    /// the parser (which has no notion of store-global ordinals) has produced them, and onto
+    /// constructed nodes at registration time. Like <see cref="Parent"/> and <see cref="BaseUri"/>,
+    /// it is mutable only to support tree assembly.
+    /// </para>
+    /// </remarks>
+    public ulong TreeOrdinal { get; set; }
+
+    /// <summary>
     /// The identifier of the document that contains this node.
     /// </summary>
     /// <remarks>
@@ -174,6 +201,40 @@ public abstract class XdmNode
     /// original document context for nodes extracted during XSLT transformations.
     /// </remarks>
     public string? CopySourceBaseUri { get; set; }
+
+    /// <summary>
+    /// The value key that totally orders and identifies this node in XDM document order:
+    /// the pair <c>(TreeOrdinal, Id)</c>.
+    /// </summary>
+    /// <remarks>
+    /// Use this key for document-order dedup (in place of a bare <see cref="NodeId"/> set) and
+    /// for node identity (<c>is</c>), so that distinct nodes from independently-parsed stores that
+    /// share a <see cref="NodeId"/> are not conflated.
+    /// </remarks>
+    public (ulong TreeOrdinal, NodeId Id) DocumentOrderKey => (TreeOrdinal, Id);
+
+    /// <summary>
+    /// Compares two nodes in XDM document order using the pair <c>(TreeOrdinal, Id)</c>.
+    /// </summary>
+    /// <param name="a">The first node.</param>
+    /// <param name="b">The second node.</param>
+    /// <returns>
+    /// A negative value if <paramref name="a"/> precedes <paramref name="b"/>, a positive value if
+    /// it follows, and zero if they occupy the same position (same tree and same node id).
+    /// </returns>
+    /// <remarks>
+    /// This is a total order: <see cref="TreeOrdinal"/> is compared first (grouping nodes by their
+    /// originating tree via a store-global counter), then <see cref="Id"/> orders nodes within a
+    /// tree. It is the single canonical comparison for all document-order sort, union, intersect,
+    /// except, and <c>&lt;&lt;</c>/<c>&gt;&gt;</c> sites.
+    /// </remarks>
+    public static int CompareDocumentOrder(XdmNode a, XdmNode b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        int ordinalCompare = a.TreeOrdinal.CompareTo(b.TreeOrdinal);
+        return ordinalCompare != 0 ? ordinalCompare : a.Id.CompareTo(b.Id);
+    }
 
     /// <summary>
     /// Returns <c>true</c> if this node has the specified <paramref name="kind"/>.
