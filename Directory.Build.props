@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <PackageReleaseNotes>
-      Adds proleptic-Gregorian date arithmetic to XsDate and XsDateTime (AddMonths/AddDays/Add), computing correctly for years at and below 1 (including year 0 and negative years) via the ExtendedYear carrier instead of overflowing .NET's DateOnly/DateTimeOffset floor at year 1. Additive; no existing behavior changes, no public API removed. See RELEASES.md for full notes.
+      String-value computation of large elements is now linear. An internal id-to-node index replaces a per-child linear scan in the XML parser, so building the string value of an element with many children no longer scales quadratically. Behavior is unchanged; no public API removed. See RELEASES.md for full notes.
     </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

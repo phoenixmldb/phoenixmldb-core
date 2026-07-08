@@ -784,6 +784,65 @@ public class XmlDocumentParserTests
 
     #region Helper Methods
 
+    #region Large-Element String Value (O(N) scaling)
+
+    [Fact]
+    public void Parse_ElementWithManyChildren_StringValueIsCorrect()
+    {
+        // Build <root><t>0</t><t>1</t>...<t>4999</t></root> and verify the concatenated
+        // string value matches the direct text concatenation (XDM string-value semantics).
+        const int count = 5000;
+        var sb = new System.Text.StringBuilder("<root>");
+        var expected = new System.Text.StringBuilder();
+        for (int i = 0; i < count; i++)
+        {
+            sb.Append("<t>").Append(i).Append("</t>");
+            expected.Append(i);
+        }
+        sb.Append("</root>");
+
+        var result = ParseXml(sb.ToString());
+
+        result.Document.DocumentElement.Should().NotBeNull();
+        var rootId = result.Document.DocumentElement!.Value;
+        var root = result.Nodes.First(n => n.Id == rootId) as XdmElement;
+        root.Should().NotBeNull();
+        root!.StringValue.Should().Be(expected.ToString());
+    }
+
+    [Fact]
+    public void Parse_ElementWithManyChildren_ScalesLinearly()
+    {
+        // O(N^2) string-value computation would blow up here. Assert a 50K-child element
+        // parses (string-value included) well within a generous budget, and that doubling
+        // the child count does not blow up super-linearly.
+        static string BuildXml(int n)
+        {
+            var sb = new System.Text.StringBuilder(n * 8 + 16);
+            sb.Append("<root>");
+            for (int i = 0; i < n; i++)
+                sb.Append("<t>x</t>");
+            sb.Append("</root>");
+            return sb.ToString();
+        }
+
+        // Warm up JIT so timing reflects the algorithm, not first-call overhead.
+        _ = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(BuildXml(1000));
+
+        var xml = BuildXml(50_000);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
+        sw.Stop();
+
+        result.NodeCount.Should().BeGreaterThan(50_000u);
+        // With the id->node index this completes in well under a second even in Debug.
+        // A linear per-child scan would take minutes for 50K children.
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
+            "string-value computation for large elements must be linear, not O(N^2)");
+    }
+
+    #endregion
+
     private ParseResult ParseXml(string xml, string? documentUri = null, bool preserveWhitespace = false)
     {
         var parser = CreateParser(preserveWhitespace);

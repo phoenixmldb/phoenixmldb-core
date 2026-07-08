@@ -1,5 +1,11 @@
 # Release History
 
+## 1.2.1 — 2026-07-07
+
+### Linear string-value computation for large elements
+
+String-value computation of large elements is now linear. The XML parser maintains an internal id-to-node index alongside its flat node list, so resolving each child while building an element's string value is a dictionary lookup instead of a per-child linear scan of every parsed node. Building the string value of an element with many children (and setting document-level child parents) no longer scales quadratically. Behavior is unchanged and no public API was removed.
+
 ## 1.2.0 — 2026-06-27
 
 ### Proleptic-Gregorian date arithmetic on `XsDate` / `XsDateTime`

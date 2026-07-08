@@ -53,7 +53,21 @@ public sealed class XmlDocumentParser
     private readonly DocumentId _documentId;
     private ulong _nextNodeId;
     private readonly List<XdmNode> _nodes = new();
+    // Id -> node index maintained alongside _nodes so child/parent lookups are O(1).
+    // Without this, resolving each child by id is a linear scan of _nodes, making the
+    // string-value computation of a large element O(N^2).
+    private readonly Dictionary<NodeId, XdmNode> _nodesById = new();
     private readonly bool _preserveWhitespace;
+
+    /// <summary>
+    /// Appends a node to the flat node list and the id index in lockstep.
+    /// All node creation must route through here so <see cref="_nodesById"/> stays in sync.
+    /// </summary>
+    private void AddNode(XdmNode node)
+    {
+        _nodes.Add(node);
+        _nodesById[node.Id] = node;
+    }
 
     /// <summary>
     /// Cached reflection accessors for the internal <c>SchemaType</c> property on
@@ -232,13 +246,14 @@ public sealed class XmlDocumentParser
         // This enables base-uri() inheritance: child → ... → document → DocumentUri.
         foreach (var childId in documentChildren)
         {
-            var child = _nodes.FirstOrDefault(n => n.Id == childId);
+            var child = _nodesById.GetValueOrDefault(childId);
             if (child != null)
                 child.Parent = documentNodeId;
         }
 
         // Insert document at the beginning
         _nodes.Insert(0, document);
+        _nodesById[document.Id] = document;
 
         return new ParseResult
         {
@@ -389,7 +404,7 @@ public sealed class XmlDocumentParser
         // doesn't give elements access to a node provider at runtime.
         element._stringValue = ComputeStringValue(children);
 
-        _nodes.Add(element);
+        AddNode(element);
         return nodeId;
     }
 
@@ -424,7 +439,7 @@ public sealed class XmlDocumentParser
         var sb = new System.Text.StringBuilder();
         foreach (var childId in children)
         {
-            var child = _nodes.FirstOrDefault(n => n.Id == childId);
+            var child = _nodesById.GetValueOrDefault(childId);
             if (child is XdmText text)
                 sb.Append(text.Value);
             else if (child is XdmElement childElem)
@@ -514,7 +529,7 @@ public sealed class XmlDocumentParser
             SourceColumn = sourceCol
         };
 
-        _nodes.Add(attribute);
+        AddNode(attribute);
         return nodeId;
     }
 
@@ -536,7 +551,7 @@ public sealed class XmlDocumentParser
             SourceColumn = sourceCol
         };
 
-        _nodes.Add(text);
+        AddNode(text);
         return nodeId;
     }
 
@@ -558,7 +573,7 @@ public sealed class XmlDocumentParser
             SourceColumn = sourceCol
         };
 
-        _nodes.Add(comment);
+        AddNode(comment);
         return nodeId;
     }
 
@@ -582,7 +597,7 @@ public sealed class XmlDocumentParser
             SourceColumn = sourceCol
         };
 
-        _nodes.Add(pi);
+        AddNode(pi);
         return nodeId;
     }
 
