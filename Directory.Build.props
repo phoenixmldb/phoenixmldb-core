@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.2.1</Version>
+    <Version>1.2.2</Version>
     <PackageReleaseNotes>
-      String-value computation of large elements is now linear. An internal id-to-node index replaces a per-child linear scan in the XML parser, so building the string value of an element with many children no longer scales quadratically. Behavior is unchanged; no public API removed. See RELEASES.md for full notes.
+      Store-global tree ordinal for document order. Adds XdmNode.TreeOrdinal (settable ulong, default 0), XdmNode.CompareDocumentOrder(a,b), and XdmNode.DocumentOrderKey, defining document order as the pair (TreeOrdinal, Id). NodeId is unique only within a single node store, so nodes from independently-parsed sources could share an id; the tree ordinal groups nodes by originating tree, restoring a total, consistent order and identity key. Default 0 leaves nodes constructed without a store comparing purely by Id, so existing single-source ordering is unchanged. Additive only; no public API removed. See RELEASES.md for full notes.
     </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

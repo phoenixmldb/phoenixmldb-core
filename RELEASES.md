@@ -1,6 +1,6 @@
 # Release History
 
-## Unreleased
+## 1.2.2 — 2026-07-08
 
 ### Store-global tree ordinal for document order
 
