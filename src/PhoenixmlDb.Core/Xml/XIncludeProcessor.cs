@@ -57,8 +57,9 @@ public static class XIncludeProcessor
     /// <param name="options">XInclude processing options (resolver, remote policy, depth).</param>
     /// <returns>The same <paramref name="doc"/>, with its <c>xi:include</c>s expanded.</returns>
     /// <exception cref="XIncludeException">
-    /// Thrown (always fatal in SP1) on a malformed <c>xi:include</c>, an unsupported feature
-    /// (xpointer / <c>parse="text"</c>), a cyclic or over-deep inclusion, or a resource error.
+    /// Thrown on a malformed <c>xi:include</c>, an unsupported feature (xpointer), a cyclic or
+    /// over-deep inclusion, or a resource error with no usable <c>xi:fallback</c>. A resource
+    /// error that is recovered by an <c>xi:fallback</c> does not throw.
     /// </exception>
     public static XmlDocument Expand(XmlDocument doc, Uri baseUri, XIncludeOptions options)
     {

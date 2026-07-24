@@ -221,10 +221,22 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
 
     private static string DecodeWithBomOrUtf8(byte[] bytes)
     {
-        // UTF-8/16/32 BOM detection; default UTF-8 (no BOM).
+        // BOM detection (UTF-8, UTF-32, UTF-16); default UTF-8 (no BOM). UTF-32 is tested
+        // BEFORE UTF-16 because a UTF-32LE BOM (FF FE 00 00) starts with the UTF-16LE BOM
+        // bytes (FF FE) and would otherwise be mis-detected as UTF-16LE.
         if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
         {
             return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        }
+
+        if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
+        {
+            return new UTF32Encoding(bigEndian: false, byteOrderMark: false).GetString(bytes, 4, bytes.Length - 4);
+        }
+
+        if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+        {
+            return new UTF32Encoding(bigEndian: true, byteOrderMark: false).GetString(bytes, 4, bytes.Length - 4);
         }
 
         if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)

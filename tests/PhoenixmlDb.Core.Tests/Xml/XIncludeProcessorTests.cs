@@ -36,7 +36,6 @@ public sealed class XIncludeProcessorTests : IDisposable
         return path;
     }
 
-
     private static XmlDocument LoadMaster(string content)
     {
         var doc = new XmlDocument { PreserveWhitespace = true };
@@ -135,6 +134,23 @@ public sealed class XIncludeProcessorTests : IDisposable
         var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
 
         result.DocumentElement!.InnerText.Should().Contain("DEFAULT");
+    }
+
+    [Fact]
+    public void Parse_text_blocked_remote_is_fatal_not_recovered_by_fallback()
+    {
+        // A blocked remote fetch (AllowRemote=false) is a FATAL error and must NOT be swallowed
+        // by an xi:fallback — otherwise a security-relevant block would be silently masked.
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"http://example.com/x.txt\" parse=\"text\">" +
+            "<xi:fallback>SHOULD-NOT-APPEAR</xi:fallback></xi:include></m>");
+
+        // Must throw fatally: were the fatal-rethrow filter dropped, the blocked remote would be
+        // routed to RecoverWithFallback (fallback content spliced) and no exception would surface.
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.IsFatal.Should().BeTrue();
     }
 
     [Fact]
