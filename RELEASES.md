@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### XInclude 1.0 (partial): `xi:include` with `parse="xml"`
+
+Adds `PhoenixmlDb.Core.Xml.XIncludeProcessor`, a tree-to-tree pass that expands `<xi:include href="…">` elements (XInclude namespace `http://www.w3.org/2001/XInclude`) in a parsed `XmlDocument` before it is converted to XDM. References resolve through a host-injectable `IXmlResourceResolver`; the default `LocalFileResourceResolver` resolves `file:`/relative URIs only and refuses remote (`http:`/`https:`/UNC) fetches unless `AllowRemote` is set, matching the engine's cautious posture (DTD processing stays prohibited). The processor honours intervening `xml:base`, recurses into included content, detects cyclic inclusion and a configurable maximum include depth (both fatal), and performs XInclude §4.5 `xml:base`/`xml:lang` fixup so included nodes report their origin base URI. XPointer, `xi:fallback`, and `parse="text"` are not yet implemented — an `xi:include` that needs them raises a clear `XIncludeException` rather than silently mis-including. Additive only; XInclude is opt-in per document load and no public API was removed.
+
 ## 1.2.2 — 2026-07-08
 
 ### Store-global tree ordinal for document order
