@@ -21,9 +21,12 @@ namespace PhoenixmlDb.Core.Xml;
 ///   <item><description><c>xi:fallback</c> recovery — a resource error is fatal here (SP2).</description></item>
 /// </list>
 /// <para>
-/// <c>xml:base</c> / <c>xml:lang</c> fixup (stamping an <c>xml:base</c> onto included
-/// elements so their base URI survives relocation) is Task 3 and is intentionally NOT
-/// performed here; this pass is pure structural inclusion.
+/// <c>xml:base</c> / <c>xml:lang</c> fixup (XInclude 1.0 §4.5): when a top-level included
+/// element is spliced into the master, it is stamped with <c>xml:base</c> = the resolved
+/// target URI (unless it already carries its own <c>xml:base</c>) and, if it lacks its own
+/// <c>xml:lang</c>, with the in-scope <c>xml:lang</c> from the include's ancestor chain (if
+/// any). Only the top-level included element is stamped — descendants resolve their base/lang
+/// through the added attribute plus their own existing <c>xml:base</c>/<c>xml:lang</c> chain.
 /// </para>
 /// </remarks>
 public static class XIncludeProcessor
@@ -232,7 +235,51 @@ public static class XIncludeProcessor
             ?? throw new XIncludeException(isFatal: true, $"xi:include target '{target}' has no document element.");
 
         var imported = masterDoc.ImportNode(toInsert, deep: true);
+
+        // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on the top-level included element
+        // only (descendants keep resolving through this + their own existing xml:base/xml:lang
+        // chain). The in-scope xml:lang is computed from the xi:include's own position in the
+        // (still-attached, pre-splice) master tree, so it must be captured before ReplaceChild.
+        if (imported is XmlElement importedElement)
+        {
+            if (!importedElement.HasAttribute("base", XmlNamespace))
+            {
+                importedElement.SetAttribute("base", XmlNamespace, target.ToString());
+            }
+
+            if (!importedElement.HasAttribute("lang", XmlNamespace))
+            {
+                var inScopeLang = GetInScopeLang(include);
+                if (!string.IsNullOrEmpty(inScopeLang))
+                {
+                    importedElement.SetAttribute("lang", XmlNamespace, inScopeLang);
+                }
+            }
+        }
+
         include.ParentNode!.ReplaceChild(imported, include);
+    }
+
+    /// <summary>
+    /// Returns the in-scope <c>xml:lang</c> for <paramref name="node"/>: the nearest
+    /// <c>xml:lang</c> declared on <paramref name="node"/> itself or an ancestor, or
+    /// <c>null</c> if none is in scope.
+    /// </summary>
+    private static string? GetInScopeLang(XmlNode node)
+    {
+        var current = node;
+        while (current is XmlElement element)
+        {
+            var lang = element.GetAttribute("lang", XmlNamespace);
+            if (!string.IsNullOrEmpty(lang))
+            {
+                return lang;
+            }
+
+            current = element.ParentNode!;
+        }
+
+        return null;
     }
 
     /// <summary>

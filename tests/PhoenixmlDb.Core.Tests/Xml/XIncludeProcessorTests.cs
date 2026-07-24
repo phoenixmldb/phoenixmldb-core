@@ -161,4 +161,70 @@ public sealed class XIncludeProcessorTests : IDisposable
 
         act.Should().Throw<XIncludeException>().Which.IsFatal.Should().BeTrue();
     }
+
+    [Fact]
+    public void Included_top_element_gets_xml_base_of_origin()
+    {
+        // Modelled on baseuri052.xml + dir/data1.xml: master includes dir/data1.xml, whose
+        // top element <para> has no xml:base of its own, but a descendant <item> carries its
+        // own xml:base="dir2/data.xml" (composes against the stamped parent base).
+        Write(
+            "dir/data1.xml",
+            "<para><list><item>two</item>" +
+            "<item xml:base=\"dir2/data.xml\">three</item></list></para>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            "<doc><chap>" +
+            $"<xi:include href=\"dir/data1.xml\" xmlns:xi=\"{XiNs}\"/></chap></doc>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var para = result.SelectSingleNode("//para") as XmlElement;
+        para.Should().NotBeNull();
+        para!.GetAttribute("base", "http://www.w3.org/XML/1998/namespace")
+            .Should().EndWith("dir/data1.xml");
+
+        var item = result.SelectSingleNode("//item[.='three']") as XmlElement;
+        item.Should().NotBeNull();
+        item!.GetAttribute("base", "http://www.w3.org/XML/1998/namespace")
+            .Should().Be("dir2/data.xml");
+
+        // The descendant's own (unmodified) xml:base composes against the stamped parent
+        // base to resolve to .../dir/dir2/data.xml.
+        var composed = new Uri(new Uri(para.GetAttribute("base", "http://www.w3.org/XML/1998/namespace")),
+            item.GetAttribute("base", "http://www.w3.org/XML/1998/namespace"));
+        composed.LocalPath.Should().EndWith(Path.Combine("dir", "dir2", "data.xml"));
+    }
+
+    [Fact]
+    public void Included_element_with_own_xml_base_is_not_overwritten()
+    {
+        Write("dir/data.xml", "<para xml:base=\"custom/origin.xml\">five</para>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<doc><xi:include href=\"dir/data.xml\" xmlns:xi=\"{XiNs}\"/></doc>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var para = result.SelectSingleNode("//para") as XmlElement;
+        para.Should().NotBeNull();
+        para!.GetAttribute("base", "http://www.w3.org/XML/1998/namespace")
+            .Should().Be("custom/origin.xml");
+    }
+
+    [Fact]
+    public void Xml_lang_propagates_from_include_context_when_absent()
+    {
+        Write("dir/data1.xml", "<para><item>two</item></para>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            "<doc xml:lang=\"en\"><chap>" +
+            $"<xi:include href=\"dir/data1.xml\" xmlns:xi=\"{XiNs}\"/></chap></doc>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var para = result.SelectSingleNode("//para") as XmlElement;
+        para.Should().NotBeNull();
+        para!.GetAttribute("lang", "http://www.w3.org/XML/1998/namespace").Should().Be("en");
+    }
 }
