@@ -244,7 +244,7 @@ public static class XIncludeProcessor
         {
             if (!importedElement.HasAttribute("base", XmlNamespace))
             {
-                importedElement.SetAttribute("base", XmlNamespace, target.ToString());
+                importedElement.SetAttribute("base", XmlNamespace, target.AbsoluteUri);
             }
 
             if (!importedElement.HasAttribute("lang", XmlNamespace))

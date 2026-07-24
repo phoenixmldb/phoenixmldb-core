@@ -43,11 +43,12 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
         // Uri.IsFile is true for BOTH local paths (file:///c:/x.xml) and UNC paths
         // (file://attacker-host/share/x.xml, IsUnc == true, LocalPath == \\attacker-host\
         // share\x.xml). A UNC file: URI reaches a remote host over SMB and must go through
-        // the same AllowRemote gate as http/https — otherwise it's an SSRF bypass. Only a
-        // file: URI with no host (or "localhost") is genuinely local.
+        // the same AllowRemote gate as http/https — otherwise it's an SSRF bypass. Any
+        // host-bearing file: URI (including file://localhost/...) parses as IsUnc == true,
+        // so only a hostless file: URI is treated as genuinely local.
         var isLocalFile = absolute.IsFile
             && !absolute.IsUnc
-            && (string.IsNullOrEmpty(absolute.Host) || string.Equals(absolute.Host, "localhost", StringComparison.OrdinalIgnoreCase));
+            && string.IsNullOrEmpty(absolute.Host);
 
         if (isLocalFile)
         {
