@@ -20,6 +20,17 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
     /// </summary>
     public bool AllowRemote { get; init; }
 
+    /// <summary>
+    /// Shared client for the (opt-in) <c>AllowRemote</c> <c>parse="text"</c> fetch. Auto-redirect
+    /// is disabled so an allowed fetch cannot be bounced to an unintended host (e.g. a cloud
+    /// metadata endpoint), and a bounded timeout prevents a hung remote from stalling the caller.
+    /// </summary>
+    private static readonly HttpClient RemoteTextClient = new(
+        new SocketsHttpHandler { AllowAutoRedirect = false })
+    {
+        Timeout = TimeSpan.FromSeconds(30),
+    };
+
     /// <inheritdoc />
     public XmlReader ResolveXml(Uri absolute)
     {
@@ -99,7 +110,9 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
     {
         if (!absolute.IsAbsoluteUri)
         {
-            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+            // A non-absolute URI is a caller error, not a fetch failure — fatal (not
+            // fallback-eligible), matching ResolveXml.
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: true,
                 $"XInclude resource URI must be absolute: '{absolute}'.");
         }
 
@@ -153,7 +166,6 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
         // encoding→charset→BOM→UTF-8.
         try
         {
-            using var http = new HttpClient();
             using var req = new HttpRequestMessage(HttpMethod.Get, absolute);
             if (!string.IsNullOrEmpty(accept))
             {
@@ -165,7 +177,7 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
                 req.Headers.TryAddWithoutValidation("Accept-Language", acceptLanguage);
             }
 
-            using var resp = http.Send(req);
+            using var resp = RemoteTextClient.Send(req);
             resp.EnsureSuccessStatusCode();
             var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             if (enc != null)
