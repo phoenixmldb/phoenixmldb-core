@@ -26,6 +26,15 @@ public interface IXmlResourceResolver
     /// </summary>
     /// <param name="absolute">The absolute URI to resolve.</param>
     /// <returns>An <see cref="XmlReader"/> over the resolved resource.</returns>
+    /// <remarks>
+    /// This method resolves the ABSOLUTE URI it is given. The caller is responsible for
+    /// resolving a relative <c>href</c> against the current xml:base before invoking this
+    /// method, and treats the passed <paramref name="absolute"/> as the xml:base origin for
+    /// content nested inside the resolved resource; this method does not report a
+    /// redirected/final URI back to the caller. Any path-traversal or sandboxing policy for
+    /// <c>file:</c>-scheme paths (e.g. restricting resolution to a directory allowlist) is
+    /// the caller/host's concern, not this interface's.
+    /// </remarks>
     XmlReader ResolveXml(Uri absolute);
 
     /// <summary>

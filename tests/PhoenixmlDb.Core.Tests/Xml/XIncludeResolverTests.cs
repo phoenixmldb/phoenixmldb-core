@@ -46,6 +46,19 @@ public class XIncludeResolverTests
     }
 
     [Fact]
+    public void LocalResolver_blocks_UNC_file_uri_when_AllowRemote_is_false()
+    {
+        var r = new LocalFileResourceResolver();
+
+        // file://somehost/share/x.xml is IsFile == true but IsUnc == true (LocalPath
+        // \\somehost\share\x.xml) — must be treated as remote, not local, and blocked
+        // by the same AllowRemote gate as http/https. This is the SSRF-via-SMB bypass.
+        Action unc = () => r.ResolveXml(new Uri("file://somehost/share/x.xml"));
+
+        unc.Should().Throw<XIncludeException>().Which.IsFatal.Should().BeTrue();
+    }
+
+    [Fact]
     public void LocalResolver_with_AllowRemote_does_not_block_for_policy_reason()
     {
         var r = new LocalFileResourceResolver { AllowRemote = true };
