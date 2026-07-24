@@ -136,11 +136,34 @@ public static class XIncludeProcessor
             throw new XIncludeException(isFatal: true, "xi:include is missing required 'href'.");
         }
 
-        // Resolve href against the in-scope base (baseUri already reflects ancestor xml:base).
+        // XInclude 1.0 §4.2: a fragment identifier in href is a fatal error (fragments select
+        // into the parsed result, not the resource itself, and SP1 does not support xpointer
+        // sub-resource selection at all). Checked against the raw href string, per RFC 3986,
+        // rather than the resolved Uri's .Fragment: System.Uri's fragment parsing for combined
+        // relative references is unreliable for "file" URIs whose base was constructed from a
+        // bare path string (new Uri(path), as opposed to new Uri("file://...")) — the '#' gets
+        // silently folded into the path (percent-encoded) instead of split off as a fragment,
+        // even though the two Uri instances print identically. Scanning href up front sidesteps
+        // that footgun entirely and matches the spec text (href's fragment, not the base's).
+        if (href.Contains('#', StringComparison.Ordinal))
+        {
+            throw new XIncludeException(
+                isFatal: true,
+                "fragment identifier in href is not allowed (XInclude 1.0 §4.2)");
+        }
+
+        // Per XML Base, an xml:base attribute on the element carrying a URI-valued attribute
+        // (here, href) applies to that attribute — so the xi:include element's OWN xml:base
+        // (if present) must be folded in before resolving href, on top of the ancestor-derived
+        // in-scope base.
+        var effectiveBase = AdjustBase(baseUri, include);
+
+        // Resolve href against the in-scope base (effectiveBase reflects both ancestor
+        // xml:base and any xml:base on the xi:include element itself).
         Uri target;
         try
         {
-            target = new Uri(baseUri, href);
+            target = new Uri(effectiveBase, href);
         }
         catch (UriFormatException ex)
         {
@@ -199,6 +222,12 @@ public static class XIncludeProcessor
 
         // Splice: for parse="xml" the included item is the fragment's document element.
         // Import it into the master document and replace the xi:include in place.
+        //
+        // NOTE (SP1 limitation, XInclude §3.2): per spec the replacement is technically the
+        // target document node's *children* (which may include top-level comments/PIs that sit
+        // outside the root element), not just the document element. This SP1 build only splices
+        // fragment.DocumentElement, so sibling comments/PIs outside the root are dropped. Revisit
+        // if a fixture ever needs top-level comment/PI preservation.
         var toInsert = fragment.DocumentElement
             ?? throw new XIncludeException(isFatal: true, $"xi:include target '{target}' has no document element.");
 

@@ -122,4 +122,43 @@ public sealed class XIncludeProcessorTests : IDisposable
         act.Should().Throw<XIncludeException>()
             .Which.Message.Should().Contain("not supported");
     }
+
+    [Fact]
+    public void Xml_base_on_include_element_resolves_href_against_it()
+    {
+        // The real target is at <dir>/sub/a.xml — NOT at <dir>/a.xml. The xi:include element
+        // carries its own xml:base="sub/" which must be folded into the in-scope base (on top
+        // of the master document's own base) before href="a.xml" is resolved.
+        Write("sub/a.xml", "<item>nested</item>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            "<doc><xi:include xml:base=\"sub/\" href=\"a.xml\" " +
+            $"xmlns:xi=\"{XiNs}\"/></doc>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectSingleNode("//item[.='nested']").Should().NotBeNull();
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Fragment_in_href_is_fatal()
+    {
+        // Deliberately also create a file literally named "a.xml#foo" (legal on this
+        // filesystem). This closes off a false-negative: System.Uri's combining behavior for
+        // "file" URIs whose base came from a bare path string (as BaseFor below produces)
+        // silently folds an unstripped '#' into the path instead of splitting it off as a
+        // fragment — so pre-fix, resolution would land on THIS file and splice its ("wrong")
+        // content without ever throwing, rather than failing with a coincidental
+        // file-not-found error that would make the test pass for the wrong reason.
+        Write("a.xml", "<item>right</item>");
+        Write("a.xml#foo", "<item>wrong</item>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<doc><xi:include href=\"a.xml#foo\" xmlns:xi=\"{XiNs}\"/></doc>");
+
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.IsFatal.Should().BeTrue();
+    }
 }
