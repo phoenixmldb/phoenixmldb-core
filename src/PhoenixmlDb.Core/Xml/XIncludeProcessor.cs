@@ -18,8 +18,15 @@ namespace PhoenixmlDb.Core.Xml;
 /// <list type="bullet">
 ///   <item><description><c>xpointer</c> / <c>fragid</c> sub-resource selection (SP2/SP3).</description></item>
 ///   <item><description><c>parse="text"</c> textual inclusion (SP2).</description></item>
-///   <item><description><c>xi:fallback</c> recovery — a resource error is fatal here (SP2).</description></item>
 /// </list>
+/// <para>
+/// <c>xi:fallback</c> recovery (SP2) IS implemented: a resource error on an <c>xi:include</c>
+/// (fetch or parse failure) recovers via a single <c>xi:fallback</c> child's content when
+/// present — that content is itself XInclude-processed and replaces the include (an empty
+/// fallback simply removes it) — or, absent a fallback, rethrows fatally as before. A
+/// misplaced <c>xi:fallback</c> (not a direct child of an <c>xi:include</c>) or more than one
+/// on the same <c>xi:include</c> is always a fatal error.
+/// </para>
 /// <para>
 /// <c>xml:base</c> / <c>xml:lang</c> fixup (XInclude 1.0 §4.5): when a top-level included
 /// element is spliced into the master, it is stamped with <c>xml:base</c> = the resolved
@@ -90,6 +97,17 @@ public static class XIncludeProcessor
                 {
                     ProcessInclude(masterDoc, element, baseUri, options, resolver, activeStack);
                 }
+                else if (IsXIncludeFallback(element))
+                {
+                    // A fallback that IS a child of an xi:include is consumed inside
+                    // ProcessInclude before the walk ever descends into that xi:include (the
+                    // include is replaced/removed wholesale first), so reaching an xi:fallback
+                    // here means it is not a child of an xi:include — genuinely misplaced.
+                    throw new XIncludeException(
+                        XIncludeErrorKind.MalformedFallback,
+                        isFatal: true,
+                        "xi:fallback must be a child of xi:include.");
+                }
                 else
                 {
                     // Recurse into ordinary elements, carrying any xml:base they declare.
@@ -106,6 +124,19 @@ public static class XIncludeProcessor
         string.Equals(element.NamespaceURI, XIncludeNamespace, StringComparison.Ordinal)
         && string.Equals(element.LocalName, "include", StringComparison.Ordinal);
 
+    private static bool IsXIncludeFallback(XmlNode node) =>
+        node is XmlElement e
+        && string.Equals(e.NamespaceURI, XIncludeNamespace, StringComparison.Ordinal)
+        && string.Equals(e.LocalName, "fallback", StringComparison.Ordinal);
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The fetch/parse of an xi:include target can fail with any resolver- " +
+            "or XmlReader-specific exception (I/O, network, malformed XML, ...); every such " +
+            "failure is a resource error that must be routed through RecoverWithFallback " +
+            "(fallback recovery or a fatal rethrow), so catching Exception broadly here is " +
+            "intentional, not a swallowed error.")]
     private static void ProcessInclude(
         XmlDocument masterDoc,
         XmlElement include,
@@ -199,26 +230,47 @@ public static class XIncludeProcessor
                 $"xi:include nesting exceeds MaxIncludeDepth ({options.MaxIncludeDepth}).");
         }
 
+        // xi:fallback (SP2): at most one is allowed as a direct child of xi:include. Resolved
+        // up front, before the fetch, so RecoverWithFallback has it ready if the fetch fails.
+        var fallbacks = new List<XmlElement>();
+        foreach (XmlNode c in include.ChildNodes)
+        {
+            if (IsXIncludeFallback(c))
+            {
+                fallbacks.Add((XmlElement)c);
+            }
+        }
+
+        if (fallbacks.Count > 1)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedFallback,
+                isFatal: true,
+                "xi:include has more than one xi:fallback.");
+        }
+
+        var fallback = fallbacks.Count == 1 ? fallbacks[0] : null;
+
         // Fetch + parse the target into a fragment document. A resource error (resolver
-        // throws, or the content is not well-formed XML) is FATAL in SP1: xi:fallback
-        // recovery is SP2, so there is nowhere to fall back to.
+        // throws, or the content is not well-formed XML) is fallback-eligible (SP2): if the
+        // xi:include has an xi:fallback child, its content replaces the include; otherwise the
+        // error is fatal, exactly as in SP1. A resolver failure that is itself fatal (e.g. a
+        // blocked remote/UNC fetch under AllowRemote=false) is never fallback-eligible and
+        // rethrows unchanged.
         var fragment = new XmlDocument { PreserveWhitespace = true };
         try
         {
             using var reader = resolver.ResolveXml(target);
             fragment.Load(reader);
         }
-        catch (XIncludeException)
+        catch (XIncludeException xie) when (xie.IsFatal)
         {
             throw;
         }
         catch (Exception ex)
         {
-            throw new XIncludeException(
-                XIncludeErrorKind.ResourceError,
-                isFatal: false,
-                $"xi:include could not resolve/parse '{target}': {ex.Message}",
-                ex);
+            RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack, ex, target);
+            return;
         }
 
         // Recurse into the included fragment with the target as its base, tracking it on the
@@ -271,6 +323,53 @@ public static class XIncludeProcessor
         }
 
         include.ParentNode!.ReplaceChild(imported, include);
+    }
+
+    /// <summary>
+    /// Handles a resource error (fetch/parse failure) on an <c>xi:include</c> target: recovers
+    /// via <paramref name="fallback"/>'s content when present, or rethrows fatally when it is
+    /// not.
+    /// </summary>
+    private static void RecoverWithFallback(
+        XmlDocument masterDoc,
+        XmlElement include,
+        XmlElement? fallback,
+        Uri baseUri,
+        XIncludeOptions options,
+        IXmlResourceResolver resolver,
+        List<Uri> activeStack,
+        Exception resourceError,
+        Uri target)
+    {
+        if (fallback is null)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.ResourceError,
+                isFatal: true,
+                $"xi:include could not resolve/parse '{target}' and has no xi:fallback: {resourceError.Message}",
+                resourceError);
+        }
+
+        // The fallback's CONTENT (its children) replaces the xi:include. That content is
+        // itself XInclude-processed first, in place, with the SAME in-scope base and active
+        // stack (the failed target was never entered, so it is not on the stack) — this lets
+        // the existing ExpandNode walk handle any nested xi:include/xi:fallback within the
+        // fallback subtree exactly as it would anywhere else. Only once that expansion is done
+        // are the (now fully expanded) children moved out from under the include. An empty
+        // fallback simply removes the include. `include` and `fallback` already live in
+        // masterDoc, so children can be moved directly with InsertBefore — no ImportNode needed.
+        ExpandNode(masterDoc, fallback, baseUri, options, resolver, activeStack);
+
+        var parent = include.ParentNode!;
+        var next = fallback.FirstChild;
+        while (next is not null)
+        {
+            var node = next;
+            next = node.NextSibling;
+            parent.InsertBefore(node, include);
+        }
+
+        parent.RemoveChild(include);
     }
 
     /// <summary>

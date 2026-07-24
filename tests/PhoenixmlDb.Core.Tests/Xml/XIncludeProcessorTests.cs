@@ -244,4 +244,90 @@ public sealed class XIncludeProcessorTests : IDisposable
         para.Should().NotBeNull();
         para!.GetAttribute("lang", "http://www.w3.org/XML/1998/namespace").Should().Be("en");
     }
+
+    [Fact]
+    public void Missing_target_uses_fallback_content()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<xi:include href=\"nope.xml\"><xi:fallback><f>backup</f></xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectNodes("//f[.='backup']")!.Count.Should().Be(1);
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Empty_fallback_removes_the_include()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<a/><xi:include href=\"nope.xml\"><xi:fallback/></xi:include><b/></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        // include gone; siblings intact and in order
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+        var kids = result.DocumentElement!.ChildNodes;
+        kids.Count.Should().Be(2);
+        kids[0]!.LocalName.Should().Be("a");
+        kids[1]!.LocalName.Should().Be("b");
+    }
+
+    [Fact]
+    public void Nested_fallback_include_is_expanded()
+    {
+        Write("in.xml", "<in>ok</in>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<xi:include href=\"nope.xml\"><xi:fallback>" +
+            $"<xi:include href=\"in.xml\"/></xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectNodes("//in[.='ok']")!.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public void No_fallback_on_missing_target_is_fatal_ResourceError()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"nope.xml\"/></m>");
+
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var ex = act.Should().Throw<XIncludeException>().Which;
+        ex.IsFatal.Should().BeTrue();
+        ex.Kind.Should().Be(XIncludeErrorKind.ResourceError);
+    }
+
+    [Fact]
+    public void Multiple_fallbacks_is_fatal_MalformedFallback()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<xi:include href=\"nope.xml\"><xi:fallback/><xi:fallback/></xi:include></m>");
+
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedFallback);
+    }
+
+    [Fact]
+    public void Misplaced_fallback_is_fatal_MalformedFallback()
+    {
+        // xi:fallback that is not a child of xi:include
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster($"<m xmlns:xi=\"{XiNs}\"><xi:fallback/></m>");
+
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedFallback);
+    }
 }
