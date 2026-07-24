@@ -122,13 +122,17 @@ public static class XIncludeProcessor
         if (hasXPointer || string.Equals(parse, "text", StringComparison.Ordinal))
         {
             throw new XIncludeException(
+                XIncludeErrorKind.Unsupported,
                 isFatal: true,
                 "xpointer/parse=text not supported in this build (SP2/SP3)");
         }
 
         if (!string.Equals(parse, "xml", StringComparison.Ordinal))
         {
-            throw new XIncludeException(isFatal: true, $"xi:include has invalid parse='{parse}'.");
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                $"xi:include has invalid parse='{parse}'.");
         }
 
         // With no xpointer, href is required (an xpointer-only include, referencing the
@@ -136,7 +140,10 @@ public static class XIncludeProcessor
         // unsupported xpointer branch above). Missing href here is a fatal error.
         if (string.IsNullOrEmpty(href))
         {
-            throw new XIncludeException(isFatal: true, "xi:include is missing required 'href'.");
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                "xi:include is missing required 'href'.");
         }
 
         // XInclude 1.0 §4.2: a fragment identifier in href is a fatal error (fragments select
@@ -151,6 +158,7 @@ public static class XIncludeProcessor
         if (href.Contains('#', StringComparison.Ordinal))
         {
             throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
                 isFatal: true,
                 "fragment identifier in href is not allowed (XInclude 1.0 §4.2)");
         }
@@ -178,7 +186,7 @@ public static class XIncludeProcessor
         {
             if (active == target)
             {
-                throw new XIncludeException(isFatal: true, "cyclic inclusion");
+                throw new XIncludeException(XIncludeErrorKind.Cyclic, isFatal: true, "cyclic inclusion");
             }
         }
 
@@ -186,6 +194,7 @@ public static class XIncludeProcessor
         if (activeStack.Count >= options.MaxIncludeDepth)
         {
             throw new XIncludeException(
+                XIncludeErrorKind.MaxDepthExceeded,
                 isFatal: true,
                 $"xi:include nesting exceeds MaxIncludeDepth ({options.MaxIncludeDepth}).");
         }
@@ -206,7 +215,8 @@ public static class XIncludeProcessor
         catch (Exception ex)
         {
             throw new XIncludeException(
-                isFatal: true,
+                XIncludeErrorKind.ResourceError,
+                isFatal: false,
                 $"xi:include could not resolve/parse '{target}': {ex.Message}",
                 ex);
         }
@@ -232,7 +242,10 @@ public static class XIncludeProcessor
         // fragment.DocumentElement, so sibling comments/PIs outside the root are dropped. Revisit
         // if a fixture ever needs top-level comment/PI preservation.
         var toInsert = fragment.DocumentElement
-            ?? throw new XIncludeException(isFatal: true, $"xi:include target '{target}' has no document element.");
+            ?? throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                $"xi:include target '{target}' has no document element.");
 
         var imported = masterDoc.ImportNode(toInsert, deep: true);
 

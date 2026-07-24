@@ -213,6 +213,23 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Cyclic_inclusion_reports_Cyclic_kind()
+    {
+        // a.xml includes itself → active-inclusion stack must detect the cycle.
+        Write("a.xml",
+            $"<wrap><xi:include href=\"a.xml\" xmlns:xi=\"{XiNs}\"/></wrap>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<doc><xi:include href=\"a.xml\" xmlns:xi=\"{XiNs}\"/></doc>");
+
+        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var ex = act.Should().Throw<XIncludeException>().Which;
+        ex.IsFatal.Should().BeTrue();
+        ex.Kind.Should().Be(XIncludeErrorKind.Cyclic);
+    }
+
+    [Fact]
     public void Xml_lang_propagates_from_include_context_when_absent()
     {
         Write("dir/data1.xml", "<para><item>two</item></para>");
