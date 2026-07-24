@@ -351,14 +351,20 @@ public static class XIncludeProcessor
         }
 
         // The fallback's CONTENT (its children) replaces the xi:include. That content is
-        // itself XInclude-processed first, in place, with the SAME in-scope base and active
-        // stack (the failed target was never entered, so it is not on the stack) — this lets
-        // the existing ExpandNode walk handle any nested xi:include/xi:fallback within the
-        // fallback subtree exactly as it would anywhere else. Only once that expansion is done
-        // are the (now fully expanded) children moved out from under the include. An empty
-        // fallback simply removes the include. `include` and `fallback` already live in
-        // masterDoc, so children can be moved directly with InsertBefore — no ImportNode needed.
-        ExpandNode(masterDoc, fallback, baseUri, options, resolver, activeStack);
+        // itself XInclude-processed first, in place, with the active stack unchanged (the failed
+        // target was never entered, so it is not on the stack) — this lets the existing
+        // ExpandNode walk handle any nested xi:include/xi:fallback within the fallback subtree
+        // exactly as it would anywhere else. Only once that expansion is done are the (now fully
+        // expanded) children moved out from under the include. An empty fallback simply removes
+        // the include. `include` and `fallback` already live in masterDoc, so children can be
+        // moved directly with InsertBefore — no ImportNode needed.
+        //
+        // Base URI for the fallback subtree (XML Base): fold any xml:base on the xi:include and
+        // on the xi:fallback itself onto the in-scope base, so a relative href on a nested
+        // xi:include inside the fallback resolves against the fallback's own base, not the
+        // include's parent base.
+        var fallbackBase = AdjustBase(AdjustBase(baseUri, include), fallback);
+        ExpandNode(masterDoc, fallback, fallbackBase, options, resolver, activeStack);
 
         var parent = include.ParentNode!;
         var next = fallback.FirstChild;

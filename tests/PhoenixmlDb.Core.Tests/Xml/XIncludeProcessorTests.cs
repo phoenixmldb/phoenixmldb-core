@@ -293,6 +293,42 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Nested_fallback_include_resolves_against_include_xml_base()
+    {
+        // XML Base: an xml:base on the failing xi:include applies to its fallback subtree, so a
+        // relative href on a nested xi:include inside the fallback resolves against .../sub/,
+        // not the master's parent base. (Without the fixup this include would miss its target.)
+        Write(Path.Combine("sub", "in.xml"), "<in>ok</in>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<xi:include href=\"nope.xml\" xml:base=\"sub/\"><xi:fallback>" +
+            "<xi:include href=\"in.xml\"/></xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectNodes("//in[.='ok']")!.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public void Successful_include_drops_its_fallback_child()
+    {
+        // A successful include ignores any xi:fallback child; the fallback must be dropped, not
+        // spliced and not flagged as a misplaced fallback.
+        Write("real.xml", "<real>here</real>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<xi:include href=\"real.xml\"><xi:fallback><oops/></xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectNodes("//real[.='here']")!.Count.Should().Be(1);
+        result.GetElementsByTagName("fallback", XiNs).Count.Should().Be(0);
+        result.SelectNodes("//oops")!.Count.Should().Be(0);
+    }
+
+    [Fact]
     public void No_fallback_on_missing_target_is_fatal_ResourceError()
     {
         var masterUri = BaseFor("master.xml");
