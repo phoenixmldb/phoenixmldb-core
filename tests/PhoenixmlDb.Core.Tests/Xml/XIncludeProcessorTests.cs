@@ -172,6 +172,30 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Stamped_xml_base_serializes_and_reparses_well_formed()
+    {
+        // The §4.5 fixup stamps xml:base on the included element. It must use the reserved "xml"
+        // prefix so the expanded DOM round-trips through OuterXml (a consumer that serializes the
+        // result — e.g. the XQuery fn:doc bridge — would otherwise hit an illegal xmlns
+        // redeclaration for the XML namespace).
+        Write("a.xml", "<item>two</item>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<doc><xi:include href=\"a.xml\" xmlns:xi=\"{XiNs}\"/></doc>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        // The stamped attribute is xml:base with the canonical prefix.
+        var item = (XmlElement)result.SelectSingleNode("//item")!;
+        item.GetAttribute("base", "http://www.w3.org/XML/1998/namespace").Should().EndWith("a.xml");
+        // Round-trip: OuterXml must be reparsable (no bogus xmlns:…=xml-namespace declaration).
+        var roundTrip = new XmlDocument { PreserveWhitespace = true };
+        Action reparse = () => roundTrip.LoadXml(result.OuterXml);
+        reparse.Should().NotThrow();
+        roundTrip.OuterXml.Should().Contain("xml:base=");
+    }
+
+    [Fact]
     public void Fragment_in_href_is_fatal()
     {
         // Deliberately also create a file literally named "a.xml#foo" (legal on this

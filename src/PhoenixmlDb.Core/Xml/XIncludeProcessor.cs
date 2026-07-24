@@ -320,7 +320,7 @@ public static class XIncludeProcessor
         {
             if (!importedElement.HasAttribute("base", XmlNamespace))
             {
-                importedElement.SetAttribute("base", XmlNamespace, target.AbsoluteUri);
+                SetXmlAttribute(importedElement, "base", target.AbsoluteUri);
             }
 
             if (!importedElement.HasAttribute("lang", XmlNamespace))
@@ -328,7 +328,7 @@ public static class XIncludeProcessor
                 var inScopeLang = GetInScopeLang(include);
                 if (!string.IsNullOrEmpty(inScopeLang))
                 {
-                    importedElement.SetAttribute("lang", XmlNamespace, inScopeLang);
+                    SetXmlAttribute(importedElement, "lang", inScopeLang);
                 }
             }
         }
@@ -505,6 +505,22 @@ public static class XIncludeProcessor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Stamps an attribute in the XML namespace (<c>xml:base</c>/<c>xml:lang</c>) on
+    /// <paramref name="element"/> using the reserved <c>xml</c> prefix. Using
+    /// <see cref="XmlElement.SetAttribute(string, string, string)"/> with the XML namespace but
+    /// no prefix leaves the attribute prefix empty, so a later serialization (e.g. via
+    /// <c>OuterXml</c>) invents a bogus prefix and emits an illegal
+    /// <c>xmlns:…="http://www.w3.org/XML/1998/namespace"</c> redeclaration; binding the reserved
+    /// <c>xml</c> prefix here keeps the stamped attribute well-formed on round-trip.
+    /// </summary>
+    private static void SetXmlAttribute(XmlElement element, string localName, string value)
+    {
+        var attr = element.OwnerDocument.CreateAttribute("xml", localName, XmlNamespace);
+        attr.Value = value;
+        element.SetAttributeNode(attr);
     }
 
     /// <summary>
