@@ -5,20 +5,24 @@ using System.Xml;
 namespace PhoenixmlDb.Core.Xml;
 
 /// <summary>
-/// XInclude 1.0 processor (SP1 scope): expands <c>xi:include</c> elements with
-/// <c>parse="xml"</c> and an <c>href</c>, resolving each reference against the in-scope
-/// base URI, recursing into included content, and detecting cyclic / over-deep inclusion.
+/// XInclude 1.0 processor: expands <c>xi:include</c> elements with <c>parse="xml"</c>
+/// (structural inclusion) or <c>parse="text"</c> (textual inclusion, SP2) and an <c>href</c>,
+/// resolving each reference against the in-scope base URI, recursing into included content,
+/// and detecting cyclic / over-deep inclusion.
 /// </summary>
 /// <remarks>
 /// <para>
-/// SP1 deliberately covers only structural inclusion. The following XInclude features are
-/// out of scope for this build and raise a fatal <see cref="XIncludeException"/> when
-/// encountered:
+/// <c>xpointer</c> / <c>fragid</c> sub-resource selection is out of scope for this build
+/// (SP3) and raises a fatal <see cref="XIncludeException"/> when encountered.
 /// </para>
-/// <list type="bullet">
-///   <item><description><c>xpointer</c> / <c>fragid</c> sub-resource selection (SP2/SP3).</description></item>
-///   <item><description><c>parse="text"</c> textual inclusion (SP2).</description></item>
-/// </list>
+/// <para>
+/// <c>parse="text"</c> (SP2) reads the target via
+/// <see cref="IXmlResourceResolver.ResolveText"/> — honoring the include's
+/// <c>encoding</c>/<c>accept</c>/<c>accept-language</c> attributes — and splices the decoded
+/// content in as a single text node in place of the <c>xi:include</c>. A resource error (fetch
+/// or decode failure) is fallback-eligible, exactly as for <c>parse="xml"</c>; a fragment
+/// identifier in <c>href</c> is still a fatal error (text resources have no fragments).
+/// </para>
 /// <para>
 /// <c>xi:fallback</c> recovery (SP2) IS implemented: a resource error on an <c>xi:include</c>
 /// (fetch or parse failure) recovers via a single <c>xi:fallback</c> child's content when
@@ -149,13 +153,19 @@ public static class XIncludeProcessor
         var parse = include.HasAttribute("parse") ? include.GetAttribute("parse") : "xml";
         var hasXPointer = include.HasAttribute("xpointer") || include.HasAttribute("fragid");
 
-        // Unsupported SP2/SP3 features: xpointer/fragid sub-selection and parse="text".
-        if (hasXPointer || string.Equals(parse, "text", StringComparison.Ordinal))
+        // Unsupported SP3 feature: xpointer/fragid sub-selection.
+        if (hasXPointer)
         {
             throw new XIncludeException(
                 XIncludeErrorKind.Unsupported,
                 isFatal: true,
-                "xpointer/parse=text not supported in this build (SP2/SP3)");
+                "xpointer/fragid sub-resource selection is not supported in this build (SP3).");
+        }
+
+        if (string.Equals(parse, "text", StringComparison.Ordinal))
+        {
+            ProcessTextInclude(masterDoc, include, href, baseUri, options, resolver, activeStack);
+            return;
         }
 
         if (!string.Equals(parse, "xml", StringComparison.Ordinal))
@@ -323,6 +333,102 @@ public static class XIncludeProcessor
         }
 
         include.ParentNode!.ReplaceChild(imported, include);
+    }
+
+    /// <summary>
+    /// Handles an <c>xi:include parse="text"</c>: resolves <paramref name="href"/> to a text
+    /// resource via <see cref="IXmlResourceResolver.ResolveText"/> (honoring the
+    /// <c>encoding</c>/<c>accept</c>/<c>accept-language</c> attributes) and splices its content
+    /// in as a single text node, replacing the <c>xi:include</c>. A resource error (fetch/decode
+    /// failure) is fallback-eligible, exactly as for <c>parse="xml"</c>.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The resolver's fetch of a parse=text target can fail with any " +
+            "resolver-specific exception (I/O, network, ...); every such failure is a resource " +
+            "error that must be routed through RecoverWithFallback, so catching Exception " +
+            "broadly here is intentional, not a swallowed error.")]
+    private static void ProcessTextInclude(
+        XmlDocument masterDoc,
+        XmlElement include,
+        string? href,
+        Uri baseUri,
+        XIncludeOptions options,
+        IXmlResourceResolver resolver,
+        List<Uri> activeStack)
+    {
+        // href required; fragment-in-href is still fatal (a text resource has no fragments).
+        if (string.IsNullOrEmpty(href))
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                "xi:include is missing required 'href'.");
+        }
+
+        if (href.Contains('#', StringComparison.Ordinal))
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                "fragment identifier in href is not allowed (XInclude 1.0 §4.2)");
+        }
+
+        var textFallbacks = new List<XmlElement>();
+        foreach (XmlNode c in include.ChildNodes)
+        {
+            if (IsXIncludeFallback(c))
+            {
+                textFallbacks.Add((XmlElement)c);
+            }
+        }
+
+        if (textFallbacks.Count > 1)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedFallback,
+                isFatal: true,
+                "xi:include has more than one xi:fallback.");
+        }
+
+        var textFallback = textFallbacks.Count == 1 ? textFallbacks[0] : null;
+
+        var effTextBase = AdjustBase(baseUri, include);
+        Uri textTarget;
+        try
+        {
+            textTarget = new Uri(effTextBase, href);
+        }
+        catch (UriFormatException ex)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedInclude,
+                isFatal: true,
+                $"xi:include href '{href}' is not a valid URI.", ex);
+        }
+
+        string text;
+        try
+        {
+            text = resolver.ResolveText(
+                textTarget,
+                include.HasAttribute("encoding") ? include.GetAttribute("encoding") : null,
+                include.HasAttribute("accept") ? include.GetAttribute("accept") : null,
+                include.HasAttribute("accept-language") ? include.GetAttribute("accept-language") : null);
+        }
+        catch (XIncludeException xie) when (xie.IsFatal)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            RecoverWithFallback(masterDoc, include, textFallback, baseUri, options, resolver, activeStack, ex, textTarget);
+            return;
+        }
+
+        var textNode = masterDoc.CreateTextNode(text);
+        include.ParentNode!.ReplaceChild(textNode, include);
     }
 
     /// <summary>

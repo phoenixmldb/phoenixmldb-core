@@ -72,6 +72,73 @@ public class XIncludeResolverTests
     }
 
     [Fact]
+    public void ResolveText_reads_local_file_as_utf8()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"xi-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tmp, "héllo & <stuff>");
+        try
+        {
+            var r = new LocalFileResourceResolver();
+
+            var text = r.ResolveText(new Uri(tmp), encoding: null, accept: null, acceptLanguage: null);
+
+            text.Should().Be("héllo & <stuff>");
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+    }
+
+    [Fact]
+    public void ResolveText_honors_explicit_encoding()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"xi-{Guid.NewGuid():N}.txt");
+        File.WriteAllBytes(tmp, System.Text.Encoding.Latin1.GetBytes("café"));
+        try
+        {
+            var r = new LocalFileResourceResolver();
+
+            var text = r.ResolveText(new Uri(tmp), encoding: "iso-8859-1", accept: null, acceptLanguage: null);
+
+            text.Should().Be("café");
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+    }
+
+    [Fact]
+    public void ResolveText_unknown_encoding_throws_resource_error()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), $"xi-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tmp, "x");
+        try
+        {
+            var r = new LocalFileResourceResolver();
+
+            Action act = () => r.ResolveText(new Uri(tmp), encoding: "no-such-enc", accept: null, acceptLanguage: null);
+
+            act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.ResourceError);
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+    }
+
+    [Fact]
+    public void ResolveText_blocks_remote_when_not_allowed()
+    {
+        var r = new LocalFileResourceResolver();
+
+        Action act = () => r.ResolveText(new Uri("http://example.com/x.txt"), null, null, null);
+
+        act.Should().Throw<XIncludeException>().Which.IsFatal.Should().BeTrue();
+    }
+
+    [Fact]
     public void XIncludeOptions_defaults()
     {
         var options = new XIncludeOptions();

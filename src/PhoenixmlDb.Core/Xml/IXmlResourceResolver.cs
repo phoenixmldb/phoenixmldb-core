@@ -46,6 +46,8 @@ public interface IXmlResourceResolver
     /// The character encoding name specified by the <c>encoding</c> attribute, or
     /// <see langword="null"/> to auto-detect / use the resource's declared encoding.
     /// </param>
+    /// <param name="accept">The <c>accept</c> attribute value (HTTP Accept header), or null.</param>
+    /// <param name="acceptLanguage">The <c>accept-language</c> attribute value (HTTP Accept-Language header), or null.</param>
     /// <returns>The resolved resource's content as text.</returns>
-    string ResolveText(Uri absolute, string? encoding);
+    string ResolveText(Uri absolute, string? encoding, string? accept, string? acceptLanguage);
 }

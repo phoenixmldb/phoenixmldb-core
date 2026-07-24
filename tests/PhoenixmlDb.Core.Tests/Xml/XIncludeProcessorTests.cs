@@ -8,9 +8,9 @@ using Xunit;
 namespace PhoenixmlDb.Core.Tests.Xml;
 
 /// <summary>
-/// Tests for <see cref="XIncludeProcessor"/> — the SP1 core: <c>parse="xml"</c> +
-/// <c>href</c> inclusion, recursion into included content, cyclic/depth fatal guards,
-/// and the "unsupported" errors for the SP2/SP3 features (xpointer, <c>parse="text"</c>).
+/// Tests for <see cref="XIncludeProcessor"/>: <c>parse="xml"</c> + <c>href</c> inclusion,
+/// <c>parse="text"</c> textual inclusion (SP2), recursion into included content, cyclic/depth
+/// fatal guards, and the "unsupported" error for the SP3 xpointer feature.
 /// </summary>
 public sealed class XIncludeProcessorTests : IDisposable
 {
@@ -35,6 +35,7 @@ public sealed class XIncludeProcessorTests : IDisposable
         File.WriteAllText(path, content);
         return path;
     }
+
 
     private static XmlDocument LoadMaster(string content)
     {
@@ -110,17 +111,30 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
-    public void ParseText_raises_unsupported()
+    public void Parse_text_splices_text_node()
     {
-        Write("a.txt", "plain text");
+        Write("t.txt", "a < b & c");
         var masterUri = BaseFor("master.xml");
         var master = LoadMaster(
-            $"<doc><xi:include href=\"a.txt\" parse=\"text\" xmlns:xi=\"{XiNs}\"/></doc>");
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"t.txt\" parse=\"text\"/></m>");
 
-        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
 
-        act.Should().Throw<XIncludeException>()
-            .Which.Message.Should().Contain("not supported");
+        result.DocumentElement!.InnerText.Should().Be("a < b & c");
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Parse_text_read_failure_uses_fallback()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"gone.txt\" parse=\"text\">" +
+            "<xi:fallback>DEFAULT</xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.DocumentElement!.InnerText.Should().Contain("DEFAULT");
     }
 
     [Fact]

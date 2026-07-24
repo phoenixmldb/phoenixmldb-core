@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Net.Http;
+using System.Text;
 using System.Xml;
 
 namespace PhoenixmlDb.Core.Xml;
@@ -87,11 +89,154 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
     }
 
     /// <inheritdoc />
-    /// <exception cref="NotSupportedException">
-    /// Always thrown — <c>parse="text"</c> support ships in XInclude SP2.
-    /// </exception>
-    public string ResolveText(Uri absolute, string? encoding)
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Any failure reading/fetching the text resource (I/O, network, ...) " +
+            "must be surfaced as a non-fatal XIncludeException so ProcessInclude can route it " +
+            "through fallback recovery.")]
+    public string ResolveText(Uri absolute, string? encoding, string? accept, string? acceptLanguage)
     {
-        throw new NotSupportedException("parse=text (SP2)");
+        if (!absolute.IsAbsoluteUri)
+        {
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                $"XInclude resource URI must be absolute: '{absolute}'.");
+        }
+
+        var isLocalFile = absolute.IsFile && !absolute.IsUnc && string.IsNullOrEmpty(absolute.Host);
+
+        Encoding? enc = null;
+        if (!string.IsNullOrEmpty(encoding))
+        {
+            try
+            {
+                enc = Encoding.GetEncoding(encoding);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                    $"Unknown parse=text encoding '{encoding}'.", ex);
+            }
+        }
+
+        if (isLocalFile)
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(absolute.LocalPath);
+                // Explicit encoding wins; else detect BOM; else UTF-8.
+                if (enc != null)
+                {
+                    return enc.GetString(StripBom(bytes, enc));
+                }
+
+                return DecodeWithBomOrUtf8(bytes);
+            }
+            catch (XIncludeException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                    $"Could not read text resource '{absolute}': {ex.Message}", ex);
+            }
+        }
+
+        if (!AllowRemote)
+        {
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: true,
+                $"XInclude remote text resource blocked (AllowRemote is false): '{absolute}'.");
+        }
+
+        // AllowRemote http(s): fetch with content-negotiation headers, decode by
+        // encoding→charset→BOM→UTF-8.
+        try
+        {
+            using var http = new HttpClient();
+            using var req = new HttpRequestMessage(HttpMethod.Get, absolute);
+            if (!string.IsNullOrEmpty(accept))
+            {
+                req.Headers.TryAddWithoutValidation("Accept", accept);
+            }
+
+            if (!string.IsNullOrEmpty(acceptLanguage))
+            {
+                req.Headers.TryAddWithoutValidation("Accept-Language", acceptLanguage);
+            }
+
+            using var resp = http.Send(req);
+            resp.EnsureSuccessStatusCode();
+            var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            if (enc != null)
+            {
+                return enc.GetString(StripBom(bytes, enc));
+            }
+
+            var charset = resp.Content.Headers.ContentType?.CharSet;
+            if (!string.IsNullOrEmpty(charset))
+            {
+                try
+                {
+                    var c = Encoding.GetEncoding(charset);
+                    return c.GetString(StripBom(bytes, c));
+                }
+                catch (ArgumentException)
+                {
+                    // fall through to BOM/UTF-8
+                }
+            }
+
+            return DecodeWithBomOrUtf8(bytes);
+        }
+        catch (XIncludeException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                $"Could not fetch text resource '{absolute}': {ex.Message}", ex);
+        }
+    }
+
+    private static byte[] StripBom(byte[] bytes, Encoding enc)
+    {
+        var preamble = enc.GetPreamble();
+        if (preamble.Length > 0 && bytes.Length >= preamble.Length)
+        {
+            for (var i = 0; i < preamble.Length; i++)
+            {
+                if (bytes[i] != preamble[i])
+                {
+                    return bytes;
+                }
+            }
+
+            return bytes[preamble.Length..];
+        }
+
+        return bytes;
+    }
+
+    private static string DecodeWithBomOrUtf8(byte[] bytes)
+    {
+        // UTF-8/16/32 BOM detection; default UTF-8 (no BOM).
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
+        return Encoding.UTF8.GetString(bytes);
     }
 }
