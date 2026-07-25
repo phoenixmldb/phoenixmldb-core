@@ -50,4 +50,40 @@ public sealed class XPointerEvaluatorTests
         // bogus() is unknown → skipped; whole pointer selects nothing → empty (NOT fatal).
         XPointerEvaluator.Evaluate(d, "bogus(whatever)").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Element_root_relative_child_sequence()
+    {
+        var d = Doc("<r><a>one</a><b><c>deep</c></b></r>");
+        // /1 = document element r; /1/2 = r's 2nd element child (b); /1/2/1 = b's 1st (c).
+        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/2/1)");
+        nodes.Should().ContainSingle();
+        ((XmlElement)nodes[0]).InnerText.Should().Be("deep");
+    }
+
+    [Fact]
+    public void Element_id_rooted_child_sequence()
+    {
+        var d = Doc("<r><list xml:id='L'><i>a</i><i>b</i></list></r>");
+        // element(L/2) = the xml:id='L' element's 2nd element child.
+        var nodes = XPointerEvaluator.Evaluate(d, "element(L/2)");
+        nodes.Should().ContainSingle();
+        ((XmlElement)nodes[0]).InnerText.Should().Be("b");
+    }
+
+    [Fact]
+    public void Element_index_past_children_is_empty()
+    {
+        var d = Doc("<r><a/></r>");
+        XPointerEvaluator.Evaluate(d, "element(/1/5)").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Element_bad_child_sequence_is_fatal()
+    {
+        var d = Doc("<r/>");
+        var act = () => XPointerEvaluator.Evaluate(d, "element(/1/x)");
+        act.Should().Throw<XIncludeException>()
+            .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
+    }
 }

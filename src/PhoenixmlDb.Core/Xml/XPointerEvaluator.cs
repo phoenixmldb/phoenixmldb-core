@@ -40,7 +40,7 @@ internal static class XPointerEvaluator
                     break;
                 case "element":
                     var el = EvaluateElement(target, data, nsmgr);
-                    if (el.Length > 0) return el;
+                    if (el.Count > 0) return el;
                     break;
                 case "xpath1":
                     var xp = EvaluateXPath1(target, data, nsmgr);
@@ -136,10 +136,59 @@ internal static class XPointerEvaluator
         nsmgr.AddNamespace(prefix, uri);
     }
 
-    // Stubs completed in Tasks 2-3.
-    private static XmlNode[] EvaluateElement(XmlDocument target, string data, XmlNamespaceManager nsmgr)
-        => Array.Empty<XmlNode>();
+    private static IReadOnlyList<XmlNode> EvaluateElement(XmlDocument target, string data, XmlNamespaceManager nsmgr)
+    {
+        // data = childSequence: (NCName)? ('/' digit+)*  — root-relative if it begins with '/'.
+        var steps = data.Split('/');
+        XmlNode? current;
+        int startIndex;
 
+        if (data.StartsWith('/'))
+        {
+            // Leading '/' → steps[0] is empty; the document is the starting point.
+            current = target;
+            startIndex = 1;
+        }
+        else
+        {
+            // First step is an xml:id.
+            var idMatches = SelectByXmlId(target, steps[0]);
+            if (idMatches.Count == 0) return Array.Empty<XmlNode>();
+            current = idMatches[0];
+            startIndex = 1;
+        }
+
+        for (int s = startIndex; s < steps.Length; s++)
+        {
+            var step = steps[s];
+            if (!int.TryParse(step, out var index) || index < 1)
+            {
+                throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
+                    $"element() child-sequence step is not a positive integer: '{data}'.");
+            }
+            var child = NthElementChild(current!, index);
+            if (child is null) return Array.Empty<XmlNode>();
+            current = child;
+        }
+
+        return current is XmlElement ? new List<XmlNode> { current } : Array.Empty<XmlNode>();
+    }
+
+    private static XmlElement? NthElementChild(XmlNode parent, int oneBasedIndex)
+    {
+        int count = 0;
+        foreach (XmlNode child in parent.ChildNodes)
+        {
+            if (child is XmlElement e)
+            {
+                count++;
+                if (count == oneBasedIndex) return e;
+            }
+        }
+        return null;
+    }
+
+    // Stub completed in Task 3.
     private static XmlNode[] EvaluateXPath1(XmlDocument target, string data, XmlNamespaceManager nsmgr)
         => Array.Empty<XmlNode>();
 
