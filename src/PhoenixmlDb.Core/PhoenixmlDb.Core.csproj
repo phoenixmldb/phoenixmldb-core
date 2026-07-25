@@ -12,6 +12,7 @@
     <InternalsVisibleTo Include="PhoenixmlDb.Xslt" />
     <InternalsVisibleTo Include="PhoenixmlDb.XQuery" />
     <InternalsVisibleTo Include="PhoenixmlDb.Xdm.Tests" />
+    <InternalsVisibleTo Include="PhoenixmlDb.Core.Tests" />
     <!-- Both XQuery CLI builds (in-repo and the separate phoenixmldb-cli repo)
          compile to assembly name "xquery"; this grants them the shared escaper. -->
     <InternalsVisibleTo Include="xquery" />
