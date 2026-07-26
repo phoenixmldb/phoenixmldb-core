@@ -96,20 +96,6 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
-    public void Xpointer_raises_unsupported()
-    {
-        var masterUri = BaseFor("master.xml");
-        var master = LoadMaster(
-            "<doc><xi:include href=\"a.xml\" xpointer=\"element(/1/2)\" " +
-            $"xmlns:xi=\"{XiNs}\"/></doc>");
-
-        Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
-
-        act.Should().Throw<XIncludeException>()
-            .Which.Message.Should().Contain("not supported");
-    }
-
-    [Fact]
     public void Parse_text_splices_text_node()
     {
         Write("t.txt", "a < b & c");
@@ -419,5 +405,64 @@ public sealed class XIncludeProcessorTests : IDisposable
         Action act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
 
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedFallback);
+    }
+
+    [Fact]
+    public void Xpointer_element_selects_subresource_from_target()
+    {
+        Write("parts.xml", "<doc><a>one</a><b>two</b><c>three</c></doc>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"element(/1/2)\"/></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        // Selected b, not the whole doc: <b>two</b> present, <a>/<c> absent.
+        result.SelectNodes("//b[.='two']")!.Count.Should().Be(1);
+        result.SelectNodes("//a")!.Count.Should().Be(0);
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Xpointer_empty_selection_uses_fallback()
+    {
+        Write("parts.xml", "<doc><a/></doc>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"element(/1/9)\">" +
+            "<xi:fallback><fb>backup</fb></xi:fallback></xi:include></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        result.SelectNodes("//fb[.='backup']")!.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public void Xpointer_multi_node_selection_spliced_in_order()
+    {
+        Write("parts.xml", "<doc><x>1</x><x>2</x></doc>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(//x)\"/></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        var xs = result.SelectNodes("/m/x")!;
+        xs.Count.Should().Be(2);
+        xs[0]!.InnerText.Should().Be("1");
+        xs[1]!.InnerText.Should().Be("2");
+    }
+
+    [Fact]
+    public void Xpointer_selecting_attribute_is_fatal()
+    {
+        Write("parts.xml", "<doc a='v'/>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(/doc/@a)\"/></m>");
+
+        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
 }

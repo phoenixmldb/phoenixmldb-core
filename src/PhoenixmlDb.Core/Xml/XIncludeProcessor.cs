@@ -12,8 +12,13 @@ namespace PhoenixmlDb.Core.Xml;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>xpointer</c> / <c>fragid</c> sub-resource selection is out of scope for this build
-/// (SP3) and raises a fatal <see cref="XIncludeException"/> when encountered.
+/// <c>xpointer</c> / <c>fragid</c> sub-resource selection (SP3) against an external target
+/// (<c>href</c> present) is supported: the pointer is evaluated against the fetched fragment via
+/// <see cref="XPointerEvaluator"/> and the selected node-set is spliced in place of the
+/// <c>xi:include</c>, with per-element §4.5 <c>xml:base</c>/<c>xml:lang</c> fixup. An empty
+/// selection is a fallback-eligible resource error; a selection containing an attribute (or
+/// namespace) node is a fatal <see cref="XIncludeException"/>. Same-document xpointer (no
+/// <c>href</c>) is out of scope for this build and remains a fatal error.
 /// </para>
 /// <para>
 /// <c>parse="text"</c> (SP2) reads the target via
@@ -152,16 +157,9 @@ public static class XIncludeProcessor
     {
         var href = include.HasAttribute("href") ? include.GetAttribute("href") : null;
         var parse = include.HasAttribute("parse") ? include.GetAttribute("parse") : "xml";
-        var hasXPointer = include.HasAttribute("xpointer") || include.HasAttribute("fragid");
-
-        // Unsupported SP3 feature: xpointer/fragid sub-selection.
-        if (hasXPointer)
-        {
-            throw new XIncludeException(
-                XIncludeErrorKind.Unsupported,
-                isFatal: true,
-                "xpointer/fragid sub-resource selection is not supported in this build (SP3).");
-        }
+        var xpointer = include.HasAttribute("fragid") ? include.GetAttribute("fragid")
+            : include.HasAttribute("xpointer") ? include.GetAttribute("xpointer")
+            : null;
 
         if (string.Equals(parse, "text", StringComparison.Ordinal))
         {
@@ -177,9 +175,8 @@ public static class XIncludeProcessor
                 $"xi:include has invalid parse='{parse}'.");
         }
 
-        // With no xpointer, href is required (an xpointer-only include, referencing the
-        // same document, is the only case where href may be absent — and that path is the
-        // unsupported xpointer branch above). Missing href here is a fatal error.
+        // href is required here: a same-document xpointer-only include (href absent) is out of
+        // scope for this build and is a fatal error until same-document selection is added.
         if (string.IsNullOrEmpty(href))
         {
             throw new XIncludeException(
@@ -189,8 +186,7 @@ public static class XIncludeProcessor
         }
 
         // XInclude 1.0 §4.2: a fragment identifier in href is a fatal error (fragments select
-        // into the parsed result, not the resource itself, and SP1 does not support xpointer
-        // sub-resource selection at all). Checked against the raw href string, per RFC 3986,
+        // into the parsed result, not the resource itself). Checked against the raw href string, per RFC 3986,
         // rather than the resolved Uri's .Fragment: System.Uri's fragment parsing for combined
         // relative references is unreliable for "file" URIs whose base was constructed from a
         // bare path string (new Uri(path), as opposed to new Uri("file://...")) — the '#' gets
@@ -296,44 +292,93 @@ public static class XIncludeProcessor
             activeStack.RemoveAt(activeStack.Count - 1);
         }
 
-        // Splice: for parse="xml" the included item is the fragment's document element.
-        // Import it into the master document and replace the xi:include in place.
+        // Select what to include from the fetched fragment: the whole document element (no
+        // xpointer) or the XPointer-selected node-set.
         //
-        // NOTE (SP1 limitation, XInclude §3.2): per spec the replacement is technically the
-        // target document node's *children* (which may include top-level comments/PIs that sit
-        // outside the root element), not just the document element. This SP1 build only splices
-        // fragment.DocumentElement, so sibling comments/PIs outside the root are dropped. Revisit
-        // if a fixture ever needs top-level comment/PI preservation.
-        var toInsert = fragment.DocumentElement
-            ?? throw new XIncludeException(
-                XIncludeErrorKind.MalformedInclude,
-                isFatal: true,
-                $"xi:include target '{target}' has no document element.");
-
-        var imported = masterDoc.ImportNode(toInsert, deep: true);
-
-        // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on the top-level included element
-        // only (descendants keep resolving through this + their own existing xml:base/xml:lang
-        // chain). The in-scope xml:lang is computed from the xi:include's own position in the
-        // (still-attached, pre-splice) master tree, so it must be captured before ReplaceChild.
-        if (imported is XmlElement importedElement)
+        // NOTE (SP1 limitation, XInclude §3.2): per spec the whole-document replacement is
+        // technically the target document node's *children* (which may include top-level
+        // comments/PIs that sit outside the root element), not just the document element. This
+        // build only splices fragment.DocumentElement in the no-xpointer case, so sibling
+        // comments/PIs outside the root are dropped. Revisit if a fixture ever needs top-level
+        // comment/PI preservation.
+        IReadOnlyList<XmlNode> selected;
+        if (xpointer is null)
         {
-            if (!importedElement.HasAttribute("base", XmlNamespace))
+            var docEl = fragment.DocumentElement
+                ?? throw new XIncludeException(
+                    XIncludeErrorKind.MalformedInclude,
+                    isFatal: true,
+                    $"xi:include target '{target}' has no document element.");
+            selected = new List<XmlNode> { docEl };
+        }
+        else
+        {
+            selected = XPointerEvaluator.Evaluate(fragment, xpointer);
+            if (selected.Count == 0)
             {
-                SetXmlAttribute(importedElement, "base", target.AbsoluteUri);
-            }
-
-            if (!importedElement.HasAttribute("lang", XmlNamespace))
-            {
-                var inScopeLang = GetInScopeLang(include);
-                if (!string.IsNullOrEmpty(inScopeLang))
-                {
-                    SetXmlAttribute(importedElement, "lang", inScopeLang);
-                }
+                // XPointer selected nothing → resource error (fallback-eligible).
+                RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack,
+                    new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                        $"xpointer '{xpointer}' selected no nodes in '{target}'."),
+                    target);
+                return;
             }
         }
 
-        include.ParentNode!.ReplaceChild(imported, include);
+        SpliceNodeSet(masterDoc, include, selected, target);
+    }
+
+    /// <summary>
+    /// Imports each node in <paramref name="selected"/> into <paramref name="masterDoc"/> and
+    /// inserts them, in document order, in place of <paramref name="include"/>. Applies XInclude
+    /// §4.5 <c>xml:base</c>/<c>xml:lang</c> fixup to each top-level included <em>element</em>
+    /// (<paramref name="target"/> = the origin URI). An attribute (or namespace) node cannot be
+    /// spliced as content and is a fatal <see cref="XIncludeErrorKind.MalformedInclude"/>.
+    /// </summary>
+    private static void SpliceNodeSet(
+        XmlDocument masterDoc, XmlElement include, IReadOnlyList<XmlNode> selected, Uri target)
+    {
+        // System.Xml surfaces an xpath1(//@a) selection as an XmlAttribute (NodeType.Attribute);
+        // it has no reachable namespace-node type, so the attribute check covers the practical
+        // "cannot be included as content" case in full.
+        foreach (var node in selected)
+        {
+            if (node.NodeType == XmlNodeType.Attribute)
+            {
+                throw new XIncludeException(
+                    XIncludeErrorKind.MalformedInclude,
+                    isFatal: true,
+                    "xpointer selection includes an attribute node, which cannot be included as content.");
+            }
+        }
+
+        var parent = include.ParentNode!;
+        var inScopeLang = GetInScopeLang(include);
+        foreach (var node in selected)
+        {
+            var imported = masterDoc.ImportNode(node, deep: true);
+
+            // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on each top-level included
+            // element only (descendants keep resolving through this + their own existing
+            // xml:base/xml:lang chain). The in-scope xml:lang is computed from the xi:include's
+            // own position in the (still-attached, pre-splice) master tree.
+            if (imported is XmlElement el)
+            {
+                if (!el.HasAttribute("base", XmlNamespace))
+                {
+                    SetXmlAttribute(el, "base", target.AbsoluteUri);
+                }
+
+                if (!el.HasAttribute("lang", XmlNamespace) && !string.IsNullOrEmpty(inScopeLang))
+                {
+                    SetXmlAttribute(el, "lang", inScopeLang);
+                }
+            }
+
+            parent.InsertBefore(imported, include);
+        }
+
+        parent.RemoveChild(include);
     }
 
     /// <summary>
