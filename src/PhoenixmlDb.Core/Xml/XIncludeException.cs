@@ -20,6 +20,8 @@ public enum XIncludeErrorKind
     MalformedFallback,
     /// <summary>A requested XInclude feature is not implemented in this build.</summary>
     Unsupported,
+    /// <summary>A resource-safety limit was exceeded (expansion depth, node budget, or xpath1 time).</summary>
+    LimitExceeded,
 }
 
 /// <summary>

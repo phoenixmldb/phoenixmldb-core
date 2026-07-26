@@ -79,8 +79,9 @@ public static class XIncludeProcessor
         // Active-inclusion URI stack: the master document's own URI plus every ancestor
         // target currently being expanded. A target URI already on the stack is a cycle.
         var activeStack = new List<Uri> { baseUri };
+        var limiter = new XIncludeLimiter(options);
 
-        ExpandNode(doc, doc, baseUri, options, resolver, activeStack);
+        ExpandNode(doc, doc, baseUri, options, resolver, activeStack, limiter);
         return doc;
     }
 
@@ -95,7 +96,8 @@ public static class XIncludeProcessor
         Uri baseUri,
         XIncludeOptions options,
         IXmlResourceResolver resolver,
-        List<Uri> activeStack)
+        List<Uri> activeStack,
+        XIncludeLimiter limiter)
     {
         var child = node.FirstChild;
         while (child is not null)
@@ -107,7 +109,7 @@ public static class XIncludeProcessor
             {
                 if (IsXIncludeInclude(element))
                 {
-                    ProcessInclude(masterDoc, element, baseUri, options, resolver, activeStack);
+                    ProcessInclude(masterDoc, element, baseUri, options, resolver, activeStack, limiter);
                 }
                 else if (IsXIncludeFallback(element))
                 {
@@ -124,7 +126,7 @@ public static class XIncludeProcessor
                 {
                     // Recurse into ordinary elements, carrying any xml:base they declare.
                     var childBase = AdjustBase(baseUri, element);
-                    ExpandNode(masterDoc, element, childBase, options, resolver, activeStack);
+                    ExpandNode(masterDoc, element, childBase, options, resolver, activeStack, limiter);
                 }
             }
 
@@ -155,7 +157,8 @@ public static class XIncludeProcessor
         Uri baseUri,
         XIncludeOptions options,
         IXmlResourceResolver resolver,
-        List<Uri> activeStack)
+        List<Uri> activeStack,
+        XIncludeLimiter limiter)
     {
         var href = include.HasAttribute("href") ? include.GetAttribute("href") : null;
         var parse = include.HasAttribute("parse") ? include.GetAttribute("parse") : "xml";
@@ -165,7 +168,7 @@ public static class XIncludeProcessor
 
         if (string.Equals(parse, "text", StringComparison.Ordinal))
         {
-            ProcessTextInclude(masterDoc, include, href, baseUri, options, resolver, activeStack);
+            ProcessTextInclude(masterDoc, include, href, baseUri, options, resolver, activeStack, limiter);
             return;
         }
 
@@ -181,7 +184,7 @@ public static class XIncludeProcessor
         // itself.
         if (xpointer is not null && string.IsNullOrEmpty(href))
         {
-            ProcessSameDocumentXPointer(masterDoc, include, xpointer, baseUri, options, resolver, activeStack);
+            ProcessSameDocumentXPointer(masterDoc, include, xpointer, baseUri, options, resolver, activeStack, limiter);
             return;
         }
 
@@ -285,7 +288,7 @@ public static class XIncludeProcessor
         }
         catch (Exception ex)
         {
-            RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack, ex, target);
+            RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack, ex, target, limiter);
             return;
         }
 
@@ -294,7 +297,7 @@ public static class XIncludeProcessor
         activeStack.Add(target);
         try
         {
-            ExpandNode(fragment, fragment, target, options, resolver, activeStack);
+            ExpandNode(fragment, fragment, target, options, resolver, activeStack, limiter);
         }
         finally
         {
@@ -329,7 +332,7 @@ public static class XIncludeProcessor
                 RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack,
                     new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
                         $"xpointer '{xpointer}' selected no nodes in '{target}'."),
-                    target);
+                    target, limiter);
                 return;
             }
         }
@@ -349,7 +352,8 @@ public static class XIncludeProcessor
     /// </summary>
     private static void ProcessSameDocumentXPointer(
         XmlDocument masterDoc, XmlElement include, string xpointer, Uri baseUri,
-        XIncludeOptions options, IXmlResourceResolver resolver, List<Uri> activeStack)
+        XIncludeOptions options, IXmlResourceResolver resolver, List<Uri> activeStack,
+        XIncludeLimiter limiter)
     {
         // Depth guard: the containment check below catches a *direct* self-inclusion, but a
         // same-document selection whose copy contains another same-document xi:include (self- or
@@ -395,7 +399,7 @@ public static class XIncludeProcessor
             RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack,
                 new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
                     $"same-document xpointer '{xpointer}' selected no nodes."),
-                baseUri);
+                baseUri, limiter);
             return;
         }
 
@@ -427,7 +431,7 @@ public static class XIncludeProcessor
                 var imported = masterDoc.ImportNode(node, deep: true);
                 if (imported is XmlElement)
                 {
-                    ExpandNode(masterDoc, imported, baseUri, options, resolver, activeStack);
+                    ExpandNode(masterDoc, imported, baseUri, options, resolver, activeStack, limiter);
                 }
 
                 expanded.Add(imported);
@@ -548,7 +552,8 @@ public static class XIncludeProcessor
         Uri baseUri,
         XIncludeOptions options,
         IXmlResourceResolver resolver,
-        List<Uri> activeStack)
+        List<Uri> activeStack,
+        XIncludeLimiter limiter)
     {
         // href required; fragment-in-href is still fatal (a text resource has no fragments).
         if (string.IsNullOrEmpty(href))
@@ -615,7 +620,7 @@ public static class XIncludeProcessor
         }
         catch (Exception ex)
         {
-            RecoverWithFallback(masterDoc, include, textFallback, baseUri, options, resolver, activeStack, ex, textTarget);
+            RecoverWithFallback(masterDoc, include, textFallback, baseUri, options, resolver, activeStack, ex, textTarget, limiter);
             return;
         }
 
@@ -637,7 +642,8 @@ public static class XIncludeProcessor
         IXmlResourceResolver resolver,
         List<Uri> activeStack,
         Exception resourceError,
-        Uri target)
+        Uri target,
+        XIncludeLimiter limiter)
     {
         if (fallback is null)
         {
@@ -662,7 +668,7 @@ public static class XIncludeProcessor
         // xi:include inside the fallback resolves against the fallback's own base, not the
         // include's parent base.
         var fallbackBase = AdjustBase(AdjustBase(baseUri, include), fallback);
-        ExpandNode(masterDoc, fallback, fallbackBase, options, resolver, activeStack);
+        ExpandNode(masterDoc, fallback, fallbackBase, options, resolver, activeStack, limiter);
 
         var parent = include.ParentNode!;
         var next = fallback.FirstChild;
