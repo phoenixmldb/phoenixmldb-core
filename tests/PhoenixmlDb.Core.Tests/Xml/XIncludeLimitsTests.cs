@@ -49,6 +49,45 @@ public sealed class XIncludeLimitsTests
     }
 
     [Fact]
+    public void No_include_document_is_returned_unchanged()
+    {
+        // A document that declares no XInclude element skips the large-stack worker entirely and
+        // is returned as-is (same instance, same content).
+        var master = LoadDoc("<root><a/><b><c/></b></root>");
+        var before = master.OuterXml;
+
+        var result = XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"), new XIncludeOptions());
+
+        result.Should().BeSameAs(master);
+        result.OuterXml.Should().Be(before);
+    }
+
+    [Fact]
+    public void Deep_same_document_xpath1_under_the_default_timeout_does_not_crash()
+    {
+        // A same-document xpath1() over a deeply nested target evaluates under the DEFAULT timeout
+        // (MaxXPathEvalMilliseconds = 5000 > 0), which routes through the large-stack worker rather
+        // than the ~1 MB ThreadPool stack. A deep descendant search must not StackOverflow the host
+        // (uncatchable → crash = failing test); it must return the selected node.
+        const string ns = "http://www.w3.org/2001/XInclude";
+        var open = new System.Text.StringBuilder();
+        var close = new System.Text.StringBuilder();
+        for (int i = 0; i < 3000; i++)
+        {
+            open.Append("<n>");
+            close.Insert(0, "</n>");
+        }
+        // The innermost <n> carries a marker element; the include pulls it in by a descendant path.
+        var master = LoadDoc(
+            $"<root xmlns:xi='{ns}'><src>{open}<hit/>{close}</src>" +
+            "<xi:include xpointer=\"xpath1(//hit)\"/></root>");
+
+        var result = XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"), new XIncludeOptions());
+
+        result.SelectNodes("/root/hit")!.Count.Should().Be(1);
+    }
+
+    [Fact]
     public void Limiter_depth_breach_throws_LimitExceeded()
     {
         var limiter = new XIncludeLimiter(new XIncludeOptions { MaxExpansionDepth = 2 });
@@ -88,11 +127,15 @@ public sealed class XIncludeLimitsTests
     [Fact]
     public void Deep_plain_tree_is_bounded_not_stackoverflow()
     {
-        // A tree deeper than MaxExpansionDepth must fail fatally, not StackOverflow.
+        // A tree deeper than MaxExpansionDepth must fail fatally, not StackOverflow — while the tree
+        // is being walked for expansion. A top-level xi:include makes the document expansion-bearing
+        // (so the walk runs); the deep <a> chain precedes it, so descent trips the depth guard at
+        // depth 100 before the include is ever reached.
+        const string ns = "http://www.w3.org/2001/XInclude";
         var sb = new System.Text.StringBuilder();
         for (int i = 0; i < 500; i++) sb.Append("<a>");
         for (int i = 0; i < 500; i++) sb.Append("</a>");
-        var master = LoadDoc($"<root>{sb}</root>");
+        var master = LoadDoc($"<root xmlns:xi='{ns}'>{sb}<xi:include href='x.xml'/></root>");
         var act = () => XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
             new XIncludeOptions { MaxExpansionDepth = 100 });
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);

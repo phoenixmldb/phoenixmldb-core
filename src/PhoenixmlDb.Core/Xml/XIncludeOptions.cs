@@ -30,7 +30,11 @@ public sealed class XIncludeOptions
     /// Maximum tree-descent recursion depth during expansion (stack-safety bound, distinct from
     /// <see cref="MaxIncludeDepth"/> which bounds nested includes). Guards against StackOverflow
     /// from deeply nested content, fallback chains, or same-document recursion. Default 5000;
-    /// <c>&lt;= 0</c> = unlimited.
+    /// <c>&lt;= 0</c> = unlimited. Expansion runs on a worker thread with a large explicit stack
+    /// sized to accommodate this default comfortably; raising this value far above the default (or
+    /// setting it to unlimited on adversarial input) can exceed that stack and reintroduce an
+    /// <em>uncatchable</em> <see cref="System.StackOverflowException"/> that crashes the process —
+    /// keep it bounded and near the default range.
     /// </summary>
     public int MaxExpansionDepth { get; init; } = 5000;
 
@@ -52,7 +56,10 @@ public sealed class XIncludeOptions
     /// Guards against a pathological XPath over a large document. Default 5000; <c>&lt;= 0</c> =
     /// unlimited. Note: System.Xml's XPath engine cannot be cancelled mid-evaluation, so this
     /// bounds the caller's wall-clock and raises a fatal error at the deadline; an abandoned
-    /// evaluation runs to completion on a background thread (XPath 1.0 always terminates).
+    /// evaluation runs to completion on a dedicated background thread with a large stack (off the
+    /// thread pool, so it starves neither pooled work nor the caller; XPath 1.0 always terminates).
+    /// Because that thread keeps reading the document being expanded, a document that hits this
+    /// deadline MUST be discarded (see <see cref="XIncludeProcessor.Expand"/>), not reused.
     /// </summary>
     public int MaxXPathEvalMilliseconds { get; init; } = 5000;
 

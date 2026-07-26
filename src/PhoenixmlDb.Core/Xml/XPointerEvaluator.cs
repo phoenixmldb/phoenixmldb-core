@@ -206,28 +206,27 @@ internal static class XPointerEvaluator
         {
             if (xpathTimeoutMs <= 0)
             {
-                return ToList(target.SelectNodes(data, nsmgr)); // unlimited: no thread hop
+                // Unlimited: evaluate inline. The whole expansion already runs on the large-stack
+                // worker thread (see XIncludeProcessor.Expand), so a deeply nested target cannot
+                // overflow the (uncatchable) host stack here.
+                return ToList(target.SelectNodes(data, nsmgr));
             }
-            var task = System.Threading.Tasks.Task.Run(() => target.SelectNodes(data, nsmgr));
-            if (!task.Wait(xpathTimeoutMs))
-            {
-                throw new XIncludeException(XIncludeErrorKind.LimitExceeded, isFatal: true,
-                    $"xpath1() evaluation exceeded {xpathTimeoutMs} ms.");
-            }
-            return ToList(task.GetAwaiter().GetResult()); // rethrows XPathException from the task
+
+            // Bounded: hand off to a large-stack worker with a join timeout — NOT the ThreadPool,
+            // whose ~1 MB stack a deeply nested target could StackOverflow (uncatchable → host
+            // crash), and whose pooled threads an abandoned uncancellable evaluation would starve.
+            // A fatal XPath expression is rethrown as XPathException (original stack preserved) and
+            // classified below; a timeout raises LimitExceeded from inside the runner.
+            return XIncludeProcessor.RunOnLargeStack(
+                () => ToList(target.SelectNodes(data, nsmgr)),
+                "XInclude-xpath1",
+                xpathTimeoutMs,
+                $"xpath1() evaluation exceeded {xpathTimeoutMs} ms.");
         }
         catch (XPathException ex)
         {
             throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
                 $"xpath1() expression is not valid XPath: '{data}'.", ex);
-        }
-        catch (AggregateException aex) when (aex.InnerException is XPathException inner)
-        {
-            // Task.Wait(timeout) throws the fault wrapped in an AggregateException (rather than
-            // returning false) when the task completes-but-faults within the budget; unwrap it
-            // to the same MalformedInclude classification as the synchronous XPathException path.
-            throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
-                $"xpath1() expression is not valid XPath: '{data}'.", inner);
         }
     }
 

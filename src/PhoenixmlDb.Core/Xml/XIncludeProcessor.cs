@@ -104,30 +104,53 @@ public static class XIncludeProcessor
         var activeStack = new List<Uri> { baseUri };
         var limiter = new XIncludeLimiter(options);
 
-        RunOnLargeStack(() => ExpandNode(doc, doc, baseUri, options, resolver, activeStack, limiter));
+        // No XInclude elements → nothing to expand, and no reason to pay for a large-stack worker
+        // thread (the common case for an XInclude-enabled load). The scan is iterative, so it adds
+        // no call-stack depth of its own; a misplaced xi:fallback IS an XInclude element, so it is
+        // still caught by the walk below rather than silently skipped.
+        if (!ContainsXIncludeElement(doc))
+        {
+            return doc;
+        }
+
+        RunOnLargeStack<object?>(
+            () =>
+            {
+                ExpandNode(doc, doc, baseUri, options, resolver, activeStack, limiter);
+                return null;
+            },
+            "XInclude-Expand",
+            Timeout.Infinite,
+            timeoutMessage: string.Empty);
         return doc;
     }
 
     /// <summary>
     /// Runs <paramref name="work"/> on a dedicated worker thread with a large explicit stack (see
-    /// <see cref="ExpansionStackBytes"/>) and rethrows any exception it produced on the caller's
-    /// thread with the original stack trace preserved. This is what makes the depth guard the
-    /// effective limit on deep recursion instead of the physical thread stack.
+    /// <see cref="ExpansionStackBytes"/>), waits up to <paramref name="joinTimeoutMs"/> for it
+    /// (<see cref="Timeout.Infinite"/> = wait forever), and rethrows any exception it produced on
+    /// the caller's thread with the original stack trace preserved. This is what makes the depth
+    /// guard — and the <c>xpath1()</c> recursion — bounded by the logical limit rather than the
+    /// physical thread stack. On timeout the worker is abandoned (System.Xml's XPath engine cannot
+    /// be cancelled) but, being a background thread on its own large stack, it blocks neither
+    /// process exit nor the <see cref="System.Threading.ThreadPool"/> and cannot overflow the
+    /// caller's stack; a fatal <see cref="XIncludeErrorKind.LimitExceeded"/> is raised instead.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
-        Justification = "The worker thread must capture ANY exception the expansion produced and " +
+        Justification = "The worker thread must capture ANY exception the work produced and " +
             "re-throw it on the caller's thread (with the original stack via ExceptionDispatchInfo); " +
             "swallowing nothing, this broad catch is the marshalling boundary, not error hiding.")]
-    private static void RunOnLargeStack(Action work)
+    internal static T RunOnLargeStack<T>(Func<T> work, string threadName, int joinTimeoutMs, string timeoutMessage)
     {
+        T result = default!;
         ExceptionDispatchInfo? failure = null;
         var thread = new Thread(() =>
         {
             try
             {
-                work();
+                result = work();
             }
             catch (Exception ex)
             {
@@ -136,14 +159,42 @@ public static class XIncludeProcessor
         }, ExpansionStackBytes)
         {
             IsBackground = true,
-            Name = "XInclude-Expand",
+            Name = threadName,
         };
         // Preserve the caller's culture so XPath number/string formatting is unaffected by the hop.
         thread.CurrentCulture = System.Globalization.CultureInfo.CurrentCulture;
         thread.CurrentUICulture = System.Globalization.CultureInfo.CurrentUICulture;
         thread.Start();
-        thread.Join();
+        if (!thread.Join(joinTimeoutMs))
+        {
+            throw new XIncludeException(XIncludeErrorKind.LimitExceeded, isFatal: true, timeoutMessage);
+        }
+
         failure?.Throw();
+        return result;
+    }
+
+    // Iterative (no recursion → no stack growth) check for any element in the XInclude namespace.
+    private static bool ContainsXIncludeElement(XmlNode root)
+    {
+        var stack = new Stack<XmlNode>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            if (node is XmlElement element
+                && string.Equals(element.NamespaceURI, XIncludeNamespace, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            for (var child = node.FirstChild; child is not null; child = child.NextSibling)
+            {
+                stack.Push(child);
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
