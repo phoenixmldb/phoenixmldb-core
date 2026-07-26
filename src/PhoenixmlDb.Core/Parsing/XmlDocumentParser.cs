@@ -139,6 +139,9 @@ public sealed class XmlDocumentParser
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
+            // Cap internal-entity expansion (billion-laughs DoS on untrusted input). Matches the
+            // sibling parsers (StylesheetParser, XmlConversionFunctions); omitted here originally.
+            MaxCharactersFromEntities = 1_000_000,
             ValidationType = ValidationType.DTD
         };
         // Suppress validation event exceptions — we want DTD type info but not validation failures
@@ -164,6 +167,9 @@ public sealed class XmlDocumentParser
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
+            // Cap internal-entity expansion (billion-laughs DoS on untrusted input). Matches the
+            // sibling parsers (StylesheetParser, XmlConversionFunctions); omitted here originally.
+            MaxCharactersFromEntities = 1_000_000,
             ValidationType = ValidationType.Schema
         };
         settings.Schemas = schemas;
@@ -189,6 +195,9 @@ public sealed class XmlDocumentParser
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
+            // Cap internal-entity expansion (billion-laughs DoS on untrusted input). Matches the
+            // sibling parsers (StylesheetParser, XmlConversionFunctions); omitted here originally.
+            MaxCharactersFromEntities = 1_000_000,
             ValidationType = ValidationType.DTD
         };
         // Suppress validation event exceptions — we want DTD type info but not validation failures
@@ -265,6 +274,11 @@ public sealed class XmlDocumentParser
 
     private NodeId ParseElement(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
+        // One frame per nesting level: a deeply nested (untrusted) document would overflow the
+        // native stack — an uncatchable StackOverflowException that crashes the host. Throw a
+        // catchable InsufficientExecutionStackException before the stack is exhausted instead.
+        System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
+
         // Capture position before MoveToFirstAttribute shifts the reader cursor.
         var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
         var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;

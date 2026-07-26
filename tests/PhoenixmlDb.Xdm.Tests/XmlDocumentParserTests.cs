@@ -843,6 +843,50 @@ public class XmlDocumentParserTests
 
     #endregion
 
+    #region Resource Safety (untrusted input)
+
+    [Fact]
+    public void Parse_BillionLaughs_IsBoundedNotOom()
+    {
+        // A ~1 KB document whose nested internal entities expand to ~3,000,000 'lol' occurrences.
+        // Without a MaxCharactersFromEntities cap this expands unboundedly into a single text node
+        // (OOM / DoS on untrusted input). With the cap the reader raises XmlException at the limit.
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<?xml version='1.0'?><!DOCTYPE r [");
+        sb.Append("<!ENTITY lol 'lol'>");
+        for (int i = 1; i <= 6; i++)
+        {
+            sb.Append("<!ENTITY lol").Append(i).Append(" '");
+            for (int j = 0; j < 10; j++)
+                sb.Append('&').Append(i == 1 ? "lol" : "lol" + (i - 1)).Append(';');
+            sb.Append("'>");
+        }
+        sb.Append("]><r>&lol6;</r>");
+
+        var act = () => new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(sb.ToString());
+
+        act.Should().Throw<XmlException>("entity expansion must be capped, not expanded into memory");
+    }
+
+    [Fact]
+    public void Parse_DeeplyNestedDocument_IsBoundedNotStackOverflow()
+    {
+        // XmlReader reads arbitrarily deep nesting iteratively, but ParseElement recurses one frame
+        // per level. Without a stack guard a deeply nested (untrusted) document overflows the native
+        // thread stack — an UNCATCHABLE StackOverflowException that kills the host. The guard must
+        // convert this into a catchable exception (a failing test here = a host crash).
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 60_000; i++) sb.Append("<a>");
+        sb.Append("<x/>");
+        for (int i = 0; i < 60_000; i++) sb.Append("</a>");
+
+        var act = () => new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(sb.ToString());
+
+        act.Should().Throw<System.InsufficientExecutionStackException>();
+    }
+
+    #endregion
+
     private ParseResult ParseXml(string xml, string? documentUri = null, bool preserveWhitespace = false)
     {
         var parser = CreateParser(preserveWhitespace);
