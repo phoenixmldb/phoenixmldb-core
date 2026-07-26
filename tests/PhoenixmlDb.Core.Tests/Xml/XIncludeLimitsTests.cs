@@ -7,6 +7,47 @@ namespace PhoenixmlDb.Core.Tests.Xml;
 
 public sealed class XIncludeLimitsTests
 {
+    // A resolver whose every fetch is a cheap, non-fatal resource error — so a fallback chain
+    // recurses (ProcessInclude → RecoverWithFallback → ExpandNode) at full speed without paying
+    // for thousands of real filesystem misses.
+    private sealed class AlwaysFailsResolver : IXmlResourceResolver
+    {
+        public XmlReader ResolveXml(System.Uri absolute) =>
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false, "always fails");
+
+        public string ResolveText(System.Uri absolute, string? encoding, string? accept, string? acceptLanguage) =>
+            throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false, "always fails");
+    }
+
+    [Fact]
+    public void Deep_fallback_chain_is_bounded_at_the_DEFAULT_depth()
+    {
+        // The regression that the SP4 whole-branch review caught: the mechanism (depth guard) was
+        // correct but the DEFAULT MaxExpansionDepth (5000) was higher than a normal ~1 MB thread
+        // stack survives on the frame-heavy fallback path (ExpandNode → ProcessInclude →
+        // RecoverWithFallback → ExpandNode), so with default options the guard could never fire —
+        // the process StackOverflowed first. Run a fallback chain deeper than the default depth: it
+        // must throw a catchable LimitExceeded, not crash the host. (A StackOverflow is uncatchable,
+        // so a crash here = a failing test.) Uses the DEFAULT MaxExpansionDepth (5000) via an
+        // options object that only swaps in the fast always-fail resolver.
+        const string ns = "http://www.w3.org/2001/XInclude";
+        var open = new System.Text.StringBuilder();
+        var close = new System.Text.StringBuilder();
+        for (int i = 0; i < 6000; i++)
+        {
+            open.Append("<xi:include href='x.xml'><xi:fallback>");
+            close.Insert(0, "</xi:fallback></xi:include>");
+        }
+        var master = new XmlDocument { PreserveWhitespace = true };
+        master.LoadXml($"<root xmlns:xi='{ns}'>{open}{close}</root>");
+
+        var act = () => XIncludeProcessor.Expand(
+            master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { Resolver = new AlwaysFailsResolver() }); // DEFAULT MaxExpansionDepth (5000)
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
+    }
+
     [Fact]
     public void Limiter_depth_breach_throws_LimitExceeded()
     {

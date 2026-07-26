@@ -210,7 +210,10 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
                     $"resource '{absolute}' exceeds MaxResourceBytes ({MaxResourceBytes}).");
             }
 
-            var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            // Read the body with a hard cap: the Content-Length check above is advisory (a hostile
+            // or chunked response may omit or lie about it), so bound the actual bytes read so a
+            // no-length streaming response cannot pull unbounded data into memory.
+            var bytes = ReadCapped(resp, absolute);
             if (enc != null)
             {
                 return enc.GetString(StripBom(bytes, enc));
@@ -241,6 +244,36 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
             throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
                 $"Could not fetch text resource '{absolute}': {ex.Message}", ex);
         }
+    }
+
+    // Reads the response body, capping the number of bytes at MaxResourceBytes when set (<= 0 =
+    // unlimited). Reading one byte past the cap and finding data left = over the limit → a
+    // fallback-eligible resource error, even when Content-Length is absent (chunked responses).
+    private byte[] ReadCapped(HttpResponseMessage resp, Uri absolute)
+    {
+        if (MaxResourceBytes <= 0)
+        {
+            return resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        }
+
+        using var stream = resp.Content.ReadAsStream();
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            total += read;
+            if (total > MaxResourceBytes)
+            {
+                throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                    $"resource '{absolute}' exceeds MaxResourceBytes ({MaxResourceBytes}).");
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return buffer.ToArray();
     }
 
     private static byte[] StripBom(byte[] bytes, Encoding enc)

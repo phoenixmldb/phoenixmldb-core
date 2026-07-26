@@ -23,6 +23,12 @@ internal sealed class XIncludeLimiter
     /// <summary>The per-<c>xpath1()</c> wall-clock budget in ms (&lt;= 0 = unlimited).</summary>
     public int XPathTimeoutMs { get; }
 
+    /// <summary>
+    /// Whether the produced-node budget is active. Lets callers skip the (O(subtree)) node count
+    /// entirely when the budget is disabled, so <c>&lt;= 0</c> is truly free.
+    /// </summary>
+    public bool NodeBudgetEnabled => _maxNodes > 0;
+
     /// <summary>Increments the descent depth; throws fatal <see cref="XIncludeErrorKind.LimitExceeded"/> past the cap.</summary>
     public void EnterExpansion()
     {

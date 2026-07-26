@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using System.Xml;
 
 namespace PhoenixmlDb.Core.Xml;
@@ -54,6 +56,17 @@ public static class XIncludeProcessor
 
     private const string XmlNamespace = "http://www.w3.org/XML/1998/namespace";
 
+    // Expansion runs on a dedicated worker thread with a large explicit stack. The recursive
+    // walk uses several stack frames per nesting level (deepest on the fallback path:
+    // ExpandNode → ProcessInclude → RecoverWithFallback → ExpandNode), so on the default ~1 MB
+    // thread stack the physical limit is reached (a few hundred levels) LONG before the logical
+    // MaxExpansionDepth guard (default 5000) can trip — an uncatchable StackOverflow that would
+    // crash the host. A large worker stack makes the generous default genuinely enforceable: the
+    // guard throws a catchable LimitExceeded instead of the process dying. (If a host raises
+    // MaxExpansionDepth far beyond the default it may need a correspondingly larger process stack;
+    // the default is sized to fit comfortably here.)
+    private const int ExpansionStackBytes = 256 * 1024 * 1024;
+
     /// <summary>
     /// Expands every <c>xi:include</c> (<c>parse="xml"</c>, <c>href</c>) in
     /// <paramref name="doc"/>, in place, and returns the same mutated document.
@@ -65,9 +78,18 @@ public static class XIncludeProcessor
     /// <returns>The same <paramref name="doc"/>, with its <c>xi:include</c>s expanded.</returns>
     /// <exception cref="XIncludeException">
     /// Thrown on a malformed <c>xi:include</c> (including a malformed xpointer), a cyclic or
-    /// over-deep inclusion, or a resource error with no usable <c>xi:fallback</c>. A resource
-    /// error that is recovered by an <c>xi:fallback</c> does not throw.
+    /// over-deep inclusion, a resource-safety limit (<see cref="XIncludeErrorKind.LimitExceeded"/>),
+    /// or a resource error with no usable <c>xi:fallback</c>. A resource error that is recovered by
+    /// an <c>xi:fallback</c> does not throw.
     /// </exception>
+    /// <remarks>
+    /// <paramref name="doc"/> is expanded <em>in place</em>. On any thrown
+    /// <see cref="XIncludeException"/> it is left partially expanded and in an undefined state and
+    /// MUST be discarded, not reused. In particular, a same-document <c>xpath1()</c> evaluation that
+    /// exceeds <see cref="XIncludeOptions.MaxXPathEvalMilliseconds"/> throws while a background
+    /// thread may still be reading <paramref name="doc"/> (System.Xml's XPath engine cannot be
+    /// cancelled mid-evaluation); discarding the document as required avoids racing that reader.
+    /// </remarks>
     public static XmlDocument Expand(XmlDocument doc, Uri baseUri, XIncludeOptions options)
     {
         ArgumentNullException.ThrowIfNull(doc);
@@ -82,8 +104,46 @@ public static class XIncludeProcessor
         var activeStack = new List<Uri> { baseUri };
         var limiter = new XIncludeLimiter(options);
 
-        ExpandNode(doc, doc, baseUri, options, resolver, activeStack, limiter);
+        RunOnLargeStack(() => ExpandNode(doc, doc, baseUri, options, resolver, activeStack, limiter));
         return doc;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> on a dedicated worker thread with a large explicit stack (see
+    /// <see cref="ExpansionStackBytes"/>) and rethrows any exception it produced on the caller's
+    /// thread with the original stack trace preserved. This is what makes the depth guard the
+    /// effective limit on deep recursion instead of the physical thread stack.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The worker thread must capture ANY exception the expansion produced and " +
+            "re-throw it on the caller's thread (with the original stack via ExceptionDispatchInfo); " +
+            "swallowing nothing, this broad catch is the marshalling boundary, not error hiding.")]
+    private static void RunOnLargeStack(Action work)
+    {
+        ExceptionDispatchInfo? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                work();
+            }
+            catch (Exception ex)
+            {
+                failure = ExceptionDispatchInfo.Capture(ex);
+            }
+        }, ExpansionStackBytes)
+        {
+            IsBackground = true,
+            Name = "XInclude-Expand",
+        };
+        // Preserve the caller's culture so XPath number/string formatting is unaffected by the hop.
+        thread.CurrentCulture = System.Globalization.CultureInfo.CurrentCulture;
+        thread.CurrentUICulture = System.Globalization.CultureInfo.CurrentUICulture;
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
     }
 
     /// <summary>
@@ -518,7 +578,10 @@ public static class XIncludeProcessor
                 ? node
                 : masterDoc.ImportNode(node, deep: true);
 
-            limiter.ConsumeNodes(CountNodes(imported));
+            if (limiter.NodeBudgetEnabled)
+            {
+                limiter.ConsumeNodes(CountNodes(imported));
+            }
 
             // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on each top-level included
             // element only (descendants keep resolving through this + their own existing
