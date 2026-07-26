@@ -36,4 +36,45 @@ public sealed class XIncludeLimitsTests
         // no throw
         limiter.XPathTimeoutMs.Should().Be(5000); // default
     }
+
+    private static XmlDocument LoadDoc(string xml)
+    {
+        var d = new XmlDocument { PreserveWhitespace = true };
+        d.LoadXml(xml);
+        return d;
+    }
+
+    [Fact]
+    public void Deep_plain_tree_is_bounded_not_stackoverflow()
+    {
+        // A tree deeper than MaxExpansionDepth must fail fatally, not StackOverflow.
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 500; i++) sb.Append("<a>");
+        for (int i = 0; i < 500; i++) sb.Append("</a>");
+        var master = LoadDoc($"<root>{sb}</root>");
+        var act = () => XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { MaxExpansionDepth = 100 });
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
+    }
+
+    [Fact]
+    public void Deep_fallback_chain_is_bounded_not_stackoverflow()
+    {
+        // Each xi:include fetches a missing local file (non-fatal resource error → fallback), whose
+        // fallback contains the next failing include, N deep. This path recurses ProcessInclude →
+        // RecoverWithFallback → ExpandNode without the include-stack growing; MaxExpansionDepth must
+        // still bound it.
+        const string ns = "http://www.w3.org/2001/XInclude";
+        var open = new System.Text.StringBuilder();
+        var close = new System.Text.StringBuilder();
+        for (int i = 0; i < 300; i++)
+        {
+            open.Append(System.Globalization.CultureInfo.InvariantCulture, $"<xi:include href='/no/such/file/{i}'><xi:fallback>");
+            close.Insert(0, "</xi:fallback></xi:include>");
+        }
+        var master = LoadDoc($"<root xmlns:xi='{ns}'>{open}{close}</root>");
+        var act = () => XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { MaxExpansionDepth = 50 });
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
+    }
 }

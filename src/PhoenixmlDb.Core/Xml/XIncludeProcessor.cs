@@ -99,38 +99,46 @@ public static class XIncludeProcessor
         List<Uri> activeStack,
         XIncludeLimiter limiter)
     {
-        var child = node.FirstChild;
-        while (child is not null)
+        limiter.EnterExpansion();
+        try
         {
-            // Capture the next sibling now: `child` may be replaced/removed below.
-            var next = child.NextSibling;
-
-            if (child is XmlElement element)
+            var child = node.FirstChild;
+            while (child is not null)
             {
-                if (IsXIncludeInclude(element))
-                {
-                    ProcessInclude(masterDoc, element, baseUri, options, resolver, activeStack, limiter);
-                }
-                else if (IsXIncludeFallback(element))
-                {
-                    // A fallback that IS a child of an xi:include is consumed inside
-                    // ProcessInclude before the walk ever descends into that xi:include (the
-                    // include is replaced/removed wholesale first), so reaching an xi:fallback
-                    // here means it is not a child of an xi:include — genuinely misplaced.
-                    throw new XIncludeException(
-                        XIncludeErrorKind.MalformedFallback,
-                        isFatal: true,
-                        "xi:fallback must be a child of xi:include.");
-                }
-                else
-                {
-                    // Recurse into ordinary elements, carrying any xml:base they declare.
-                    var childBase = AdjustBase(baseUri, element);
-                    ExpandNode(masterDoc, element, childBase, options, resolver, activeStack, limiter);
-                }
-            }
+                // Capture the next sibling now: `child` may be replaced/removed below.
+                var next = child.NextSibling;
 
-            child = next;
+                if (child is XmlElement element)
+                {
+                    if (IsXIncludeInclude(element))
+                    {
+                        ProcessInclude(masterDoc, element, baseUri, options, resolver, activeStack, limiter);
+                    }
+                    else if (IsXIncludeFallback(element))
+                    {
+                        // A fallback that IS a child of an xi:include is consumed inside
+                        // ProcessInclude before the walk ever descends into that xi:include (the
+                        // include is replaced/removed wholesale first), so reaching an xi:fallback
+                        // here means it is not a child of an xi:include — genuinely misplaced.
+                        throw new XIncludeException(
+                            XIncludeErrorKind.MalformedFallback,
+                            isFatal: true,
+                            "xi:fallback must be a child of xi:include.");
+                    }
+                    else
+                    {
+                        // Recurse into ordinary elements, carrying any xml:base they declare.
+                        var childBase = AdjustBase(baseUri, element);
+                        ExpandNode(masterDoc, element, childBase, options, resolver, activeStack, limiter);
+                    }
+                }
+
+                child = next;
+            }
+        }
+        finally
+        {
+            limiter.ExitExpansion();
         }
     }
 
