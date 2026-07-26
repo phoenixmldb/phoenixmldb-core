@@ -333,7 +333,7 @@ public static class XIncludeProcessor
         }
         else
         {
-            selected = XPointerEvaluator.Evaluate(fragment, xpointer);
+            selected = XPointerEvaluator.Evaluate(fragment, xpointer, limiter.XPathTimeoutMs);
             if (selected.Count == 0)
             {
                 // XPointer selected nothing → resource error (fallback-eligible).
@@ -401,7 +401,7 @@ public static class XIncludeProcessor
             fallback = fallbacks[0];
         }
 
-        var selected = XPointerEvaluator.Evaluate(masterDoc, xpointer);
+        var selected = XPointerEvaluator.Evaluate(masterDoc, xpointer, limiter.XPathTimeoutMs);
         if (selected.Count == 0)
         {
             RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack,

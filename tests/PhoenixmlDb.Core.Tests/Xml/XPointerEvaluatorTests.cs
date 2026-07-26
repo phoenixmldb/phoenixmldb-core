@@ -20,7 +20,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r xmlns:xml='http://www.w3.org/XML/1998/namespace'>" +
                     "<a xml:id='p1'>one</a><b xml:id='p2'>two</b></r>");
-        var nodes = XPointerEvaluator.Evaluate(d, "p2");
+        var nodes = XPointerEvaluator.Evaluate(d, "p2", 5000);
         nodes.Should().ContainSingle();
         nodes[0].Should().BeAssignableTo<XmlElement>();
         ((XmlElement)nodes[0]).InnerText.Should().Be("two");
@@ -30,7 +30,7 @@ public sealed class XPointerEvaluatorTests
     public void Shorthand_no_match_returns_empty()
     {
         var d = Doc("<r><a xml:id='p1'/></r>");
-        XPointerEvaluator.Evaluate(d, "nope").Should().BeEmpty();
+        XPointerEvaluator.Evaluate(d, "nope", 5000).Should().BeEmpty();
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r/>");
         // Unbalanced parens — not a shorthand (has '('), not a valid scheme part.
-        var act = () => XPointerEvaluator.Evaluate(d, "element(/1");
+        var act = () => XPointerEvaluator.Evaluate(d, "element(/1", 5000);
         act.Should().Throw<XIncludeException>()
             .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
@@ -48,7 +48,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r><a xml:id='x'/></r>");
         // bogus() is unknown → skipped; whole pointer selects nothing → empty (NOT fatal).
-        XPointerEvaluator.Evaluate(d, "bogus(whatever)").Should().BeEmpty();
+        XPointerEvaluator.Evaluate(d, "bogus(whatever)", 5000).Should().BeEmpty();
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r><a>one</a><b><c>deep</c></b></r>");
         // /1 = document element r; /1/2 = r's 2nd element child (b); /1/2/1 = b's 1st (c).
-        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/2/1)");
+        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/2/1)", 5000);
         nodes.Should().ContainSingle();
         ((XmlElement)nodes[0]).InnerText.Should().Be("deep");
     }
@@ -66,7 +66,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r><list xml:id='L'><i>a</i><i>b</i></list></r>");
         // element(L/2) = the xml:id='L' element's 2nd element child.
-        var nodes = XPointerEvaluator.Evaluate(d, "element(L/2)");
+        var nodes = XPointerEvaluator.Evaluate(d, "element(L/2)", 5000);
         nodes.Should().ContainSingle();
         ((XmlElement)nodes[0]).InnerText.Should().Be("b");
     }
@@ -75,14 +75,14 @@ public sealed class XPointerEvaluatorTests
     public void Element_index_past_children_is_empty()
     {
         var d = Doc("<r><a/></r>");
-        XPointerEvaluator.Evaluate(d, "element(/1/5)").Should().BeEmpty();
+        XPointerEvaluator.Evaluate(d, "element(/1/5)", 5000).Should().BeEmpty();
     }
 
     [Fact]
     public void Element_bad_child_sequence_is_fatal()
     {
         var d = Doc("<r/>");
-        var act = () => XPointerEvaluator.Evaluate(d, "element(/1/x)");
+        var act = () => XPointerEvaluator.Evaluate(d, "element(/1/x)", 5000);
         act.Should().Throw<XIncludeException>()
             .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
@@ -91,7 +91,7 @@ public sealed class XPointerEvaluatorTests
     public void Xpath1_selects_nodes()
     {
         var d = Doc("<r><x>1</x><x>2</x></r>");
-        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)");
+        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)", 5000);
         nodes.Should().HaveCount(2);
         nodes.Select(nd => nd.InnerText).Should().Equal("1", "2");
     }
@@ -100,7 +100,7 @@ public sealed class XPointerEvaluatorTests
     public void Xmlns_then_xpath1_binds_prefix()
     {
         var d = Doc("<r xmlns:foo='urn:foo'><foo:e>hit</foo:e><e>miss</e></r>");
-        var nodes = XPointerEvaluator.Evaluate(d, "xmlns(p=urn:foo)xpath1(//p:e)");
+        var nodes = XPointerEvaluator.Evaluate(d, "xmlns(p=urn:foo)xpath1(//p:e)", 5000);
         nodes.Should().ContainSingle();
         nodes[0].InnerText.Should().Be("hit");
     }
@@ -110,7 +110,7 @@ public sealed class XPointerEvaluatorTests
     {
         var d = Doc("<r><a xml:id='real'>found</a></r>");
         // element(/1/9) selects nothing → fall through to element(real).
-        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/9)element(real)");
+        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/9)element(real)", 5000);
         nodes.Should().ContainSingle();
         nodes[0].InnerText.Should().Be("found");
     }
@@ -119,8 +119,29 @@ public sealed class XPointerEvaluatorTests
     public void Xpath1_invalid_expression_is_fatal()
     {
         var d = Doc("<r/>");
-        var act = () => XPointerEvaluator.Evaluate(d, "xpath1(this is not xpath)");
+        var act = () => XPointerEvaluator.Evaluate(d, "xpath1(this is not xpath)", 5000);
         act.Should().Throw<XIncludeException>()
             .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
+    }
+
+    [Fact]
+    public void Xpath1_over_time_budget_throws_LimitExceeded()
+    {
+        // Build a moderately large doc and evaluate a deliberately expensive descendant-heavy
+        // expression under a 1 ms budget → must throw LimitExceeded (not hang, not return).
+        var sb = new System.Text.StringBuilder("<r>");
+        for (int i = 0; i < 4000; i++) sb.Append("<a><b><c/></b></a>");
+        sb.Append("</r>");
+        var d = Doc(sb.ToString());
+        var act = () => XPointerEvaluator.Evaluate(d, "xpath1(//a//b//c[.//*])", xpathTimeoutMs: 1);
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
+    }
+
+    [Fact]
+    public void Xpath1_within_budget_succeeds()
+    {
+        var d = Doc("<r><x>1</x><x>2</x></r>");
+        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)", xpathTimeoutMs: 5000);
+        nodes.Should().HaveCount(2);
     }
 }

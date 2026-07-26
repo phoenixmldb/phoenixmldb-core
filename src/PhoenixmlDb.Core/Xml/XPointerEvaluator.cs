@@ -18,7 +18,7 @@ internal static class XPointerEvaluator
 {
     private const string XmlNamespace = "http://www.w3.org/XML/1998/namespace";
 
-    public static IReadOnlyList<XmlNode> Evaluate(XmlDocument target, string pointer)
+    public static IReadOnlyList<XmlNode> Evaluate(XmlDocument target, string pointer, int xpathTimeoutMs)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(pointer);
@@ -44,7 +44,7 @@ internal static class XPointerEvaluator
                     if (el.Count > 0) return el;
                     break;
                 case "xpath1":
-                    var xp = EvaluateXPath1(target, data, nsmgr);
+                    var xp = EvaluateXPath1(target, data, nsmgr, xpathTimeoutMs);
                     if (xp.Count > 0) return xp;
                     break;
                 default:
@@ -199,16 +199,35 @@ internal static class XPointerEvaluator
         return null;
     }
 
-    private static IReadOnlyList<XmlNode> EvaluateXPath1(XmlDocument target, string data, XmlNamespaceManager nsmgr)
+    private static IReadOnlyList<XmlNode> EvaluateXPath1(
+        XmlDocument target, string data, XmlNamespaceManager nsmgr, int xpathTimeoutMs)
     {
         try
         {
-            return ToList(target.SelectNodes(data, nsmgr));
+            if (xpathTimeoutMs <= 0)
+            {
+                return ToList(target.SelectNodes(data, nsmgr)); // unlimited: no thread hop
+            }
+            var task = System.Threading.Tasks.Task.Run(() => target.SelectNodes(data, nsmgr));
+            if (!task.Wait(xpathTimeoutMs))
+            {
+                throw new XIncludeException(XIncludeErrorKind.LimitExceeded, isFatal: true,
+                    $"xpath1() evaluation exceeded {xpathTimeoutMs} ms.");
+            }
+            return ToList(task.GetAwaiter().GetResult()); // rethrows XPathException from the task
         }
         catch (XPathException ex)
         {
             throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
                 $"xpath1() expression is not valid XPath: '{data}'.", ex);
+        }
+        catch (AggregateException aex) when (aex.InnerException is XPathException inner)
+        {
+            // Task.Wait(timeout) throws the fault wrapped in an AggregateException (rather than
+            // returning false) when the task completes-but-faults within the budget; unwrap it
+            // to the same MalformedInclude classification as the synchronous XPathException path.
+            throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
+                $"xpath1() expression is not valid XPath: '{data}'.", inner);
         }
     }
 
