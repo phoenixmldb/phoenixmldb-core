@@ -345,7 +345,7 @@ public static class XIncludeProcessor
             }
         }
 
-        SpliceNodeSet(masterDoc, include, selected, target);
+        SpliceNodeSet(masterDoc, include, selected, target, limiter);
     }
 
     /// <summary>
@@ -453,7 +453,7 @@ public static class XIncludeProcessor
         // Splice the (already-imported, already-expanded) copies; SpliceNodeSet skips
         // re-importing a node already owned by masterDoc, so the expanded state survives. Base
         // URI for same-document content is the master's own base.
-        SpliceNodeSet(masterDoc, include, expanded, baseUri);
+        SpliceNodeSet(masterDoc, include, expanded, baseUri, limiter);
     }
 
     /// <summary>
@@ -481,7 +481,8 @@ public static class XIncludeProcessor
     /// spliced as content and is a fatal <see cref="XIncludeErrorKind.MalformedInclude"/>.
     /// </summary>
     private static void SpliceNodeSet(
-        XmlDocument masterDoc, XmlElement include, IReadOnlyList<XmlNode> selected, Uri target)
+        XmlDocument masterDoc, XmlElement include, IReadOnlyList<XmlNode> selected, Uri target,
+        XIncludeLimiter limiter)
     {
         // Reject any selected node that cannot be spliced as element content, before touching the
         // tree (so a bad node never causes a partial splice). System.Xml surfaces an xpath1(//@a)
@@ -516,6 +517,8 @@ public static class XIncludeProcessor
                 ? node
                 : masterDoc.ImportNode(node, deep: true);
 
+            limiter.ConsumeNodes(CountNodes(imported));
+
             // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on each top-level included
             // element only (descendants keep resolving through this + their own existing
             // xml:base/xml:lang chain). The in-scope xml:lang is computed from the xi:include's
@@ -537,6 +540,24 @@ public static class XIncludeProcessor
         }
 
         parent.RemoveChild(include);
+    }
+
+    // Iterative (stack-safe) count of a node plus all its descendants.
+    private static long CountNodes(XmlNode node)
+    {
+        long count = 0;
+        var stack = new Stack<XmlNode>();
+        stack.Push(node);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            count++;
+            for (var c = n.FirstChild; c is not null; c = c.NextSibling)
+            {
+                stack.Push(c);
+            }
+        }
+        return count;
     }
 
     /// <summary>
@@ -632,6 +653,7 @@ public static class XIncludeProcessor
             return;
         }
 
+        limiter.ConsumeNodes(1);
         var textNode = masterDoc.CreateTextNode(text);
         include.ParentNode!.ReplaceChild(textNode, include);
     }

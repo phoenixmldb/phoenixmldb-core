@@ -77,4 +77,35 @@ public sealed class XIncludeLimitsTests
             new XIncludeOptions { MaxExpansionDepth = 50 });
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
     }
+
+    [Fact]
+    public void Same_document_exponential_blowup_is_bounded()
+    {
+        // p1 includes p0 twice, p2 includes p1 twice, … → 2^n copies. With a small node budget this
+        // must fail fatally (LimitExceeded), not OOM.
+        const string ns = "http://www.w3.org/2001/XInclude";
+        var sb = new System.Text.StringBuilder($"<root xmlns:xi='{ns}'><part xml:id='p0'><leaf/></part>");
+        for (int n = 1; n <= 30; n++)
+            sb.Append(System.Globalization.CultureInfo.InvariantCulture,
+                $"<part xml:id='p{n}'><xi:include xpointer='element(p{n - 1})'/>" +
+                $"<xi:include xpointer='element(p{n - 1})'/></part>");
+        sb.Append("</root>");
+        var master = LoadDoc(sb.ToString());
+        var act = () => XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { MaxExpandedNodes = 100_000 });
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.LimitExceeded);
+    }
+
+    [Fact]
+    public void Benign_multi_node_splice_under_budget_succeeds()
+    {
+        const string ns = "http://www.w3.org/2001/XInclude";
+        var master = LoadDoc(
+            $"<root xmlns:xi='{ns}'><src><a/><b/></src>" +
+            "<xi:include xpointer='xpath1(//src/*)'/></root>");
+        var result = XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { MaxExpandedNodes = 1000 });
+        result.SelectNodes("/root/a")!.Count.Should().Be(1);
+        result.SelectNodes("/root/b")!.Count.Should().Be(1);
+    }
 }
