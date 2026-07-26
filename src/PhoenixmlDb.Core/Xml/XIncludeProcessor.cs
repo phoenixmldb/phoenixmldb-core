@@ -349,6 +349,20 @@ public static class XIncludeProcessor
         XmlDocument masterDoc, XmlElement include, string xpointer, Uri baseUri,
         XIncludeOptions options, IXmlResourceResolver resolver, List<Uri> activeStack)
     {
+        // Depth guard: the containment check below catches a *direct* self-inclusion, but a
+        // same-document selection whose copy contains another same-document xi:include (self- or
+        // mutually-recursive) would otherwise recurse forever — the copy is detached, so the
+        // containment check can never match the original selection. Bound it by the shared active
+        // stack: each level of same-document expansion pushes a sentinel below (so activeStack
+        // grows with depth), and exceeding MaxIncludeDepth here is fatal.
+        if (activeStack.Count >= options.MaxIncludeDepth)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MaxDepthExceeded,
+                isFatal: true,
+                $"same-document xi:include nesting exceeds MaxIncludeDepth ({options.MaxIncludeDepth}).");
+        }
+
         // Resolve any single xi:fallback up front (same rule as the fetched-target path).
         XmlElement? fallback = null;
         var fallbacks = new List<XmlElement>();
@@ -396,19 +410,30 @@ public static class XIncludeProcessor
             }
         }
 
-        // Import copies, expand any nested xi:include within them (master base URI; same active
-        // stack; MaxIncludeDepth is the runaway backstop), then splice. The imported copies live
-        // in masterDoc; expand them in place before they are inserted.
+        // Import copies, expand any nested xi:include within them (master base URI), then splice.
+        // The imported copies live in masterDoc; expand them in place before they are inserted.
+        // Push a sentinel (the master base URI) onto the active stack so nested same-document
+        // expansion increments the shared depth counter the guard above reads — this is what makes
+        // MaxIncludeDepth an actual backstop against self-/mutually-recursive same-document
+        // inclusion. Popped in the finally so the stack is left exactly as found.
         var expanded = new List<XmlNode>(selected.Count);
-        foreach (var node in selected)
+        activeStack.Add(baseUri);
+        try
         {
-            var imported = masterDoc.ImportNode(node, deep: true);
-            if (imported is XmlElement)
+            foreach (var node in selected)
             {
-                ExpandNode(masterDoc, imported, baseUri, options, resolver, activeStack);
-            }
+                var imported = masterDoc.ImportNode(node, deep: true);
+                if (imported is XmlElement)
+                {
+                    ExpandNode(masterDoc, imported, baseUri, options, resolver, activeStack);
+                }
 
-            expanded.Add(imported);
+                expanded.Add(imported);
+            }
+        }
+        finally
+        {
+            activeStack.RemoveAt(activeStack.Count - 1);
         }
 
         // Splice the (already-imported, already-expanded) copies; SpliceNodeSet skips

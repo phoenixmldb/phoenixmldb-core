@@ -509,4 +509,24 @@ public sealed class XIncludeProcessorTests : IDisposable
 
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.Cyclic);
     }
+
+    [Fact]
+    public void Same_document_mutual_recursion_terminates_at_depth_limit()
+    {
+        // Mutual same-document inclusion: A includes B, B includes A. Neither include DIRECTLY
+        // contains its own selection (A's include selects sibling B, B's selects sibling A), so
+        // the containment guard never fires — the infinite loop lives entirely in the expanded
+        // copies. Without a depth bound this is a StackOverflow; it must terminate fatally.
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            "<A xml:id='a'><xi:include xpointer=\"b\"/></A>" +
+            "<B xml:id='b'><xi:include xpointer=\"a\"/></B></m>");
+
+        var act = () => XIncludeProcessor.Expand(
+            master, masterUri, new XIncludeOptions { MaxIncludeDepth = 8 });
+
+        act.Should().Throw<XIncludeException>()
+            .Which.Kind.Should().Be(XIncludeErrorKind.MaxDepthExceeded);
+    }
 }
