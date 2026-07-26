@@ -10,7 +10,7 @@ namespace PhoenixmlDb.Core.Tests.Xml;
 /// <summary>
 /// Tests for <see cref="XIncludeProcessor"/>: <c>parse="xml"</c> + <c>href</c> inclusion,
 /// <c>parse="text"</c> textual inclusion (SP2), recursion into included content, cyclic/depth
-/// fatal guards, and the "unsupported" error for the SP3 xpointer feature.
+/// fatal guards, and XPointer sub-resource selection (SP3).
 /// </summary>
 public sealed class XIncludeProcessorTests : IDisposable
 {
