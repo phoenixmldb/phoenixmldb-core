@@ -482,6 +482,37 @@ public sealed class XIncludeProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Xpointer_selecting_document_node_is_fatal_not_uncaught()
+    {
+        // xpath1(/) selects the document node, which cannot be spliced as content (ImportNode
+        // rejects it). It must surface as a fatal XIncludeException, not an uncaught
+        // InvalidOperationException escaping the public API.
+        Write("parts.xml", "<doc><a/></doc>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(/)\"/></m>");
+
+        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
+    }
+
+    [Fact]
+    public void Xpointer_element_id_with_quote_is_fatal_not_uncaught()
+    {
+        // A quote in an element() id-root makes the internal xml:id XPath literal invalid; it must
+        // surface as a fatal XIncludeException, not an uncaught XPathException.
+        Write("parts.xml", "<doc><a/></doc>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"element(a'b/1)\"/></m>");
+
+        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
+    }
+
+    [Fact]
     public void Same_document_selection_expands_nested_include()
     {
         Write("ext.xml", "<ext>fromfile</ext>");

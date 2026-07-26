@@ -12,13 +12,15 @@ namespace PhoenixmlDb.Core.Xml;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>xpointer</c> / <c>fragid</c> sub-resource selection (SP3) against an external target
-/// (<c>href</c> present) is supported: the pointer is evaluated against the fetched fragment via
+/// <c>xpointer</c> / <c>fragid</c> sub-resource selection (SP3) is supported for both an external
+/// target (<c>href</c> present, evaluated against the fetched fragment) and a same-document
+/// reference (<c>xpointer</c> with no <c>href</c>, evaluated against the master document and
+/// guarded against cyclic self-inclusion by containment and bounded by
+/// <see cref="XIncludeOptions.MaxIncludeDepth"/>). The pointer is evaluated via
 /// <see cref="XPointerEvaluator"/> and the selected node-set is spliced in place of the
 /// <c>xi:include</c>, with per-element §4.5 <c>xml:base</c>/<c>xml:lang</c> fixup. An empty
-/// selection is a fallback-eligible resource error; a selection containing an attribute (or
-/// namespace) node is a fatal <see cref="XIncludeException"/>. Same-document xpointer (no
-/// <c>href</c>) is out of scope for this build and remains a fatal error.
+/// selection is a fallback-eligible resource error; a selection containing a node that cannot be
+/// element content (attribute, document, etc.) is a fatal <see cref="XIncludeException"/>.
 /// </para>
 /// <para>
 /// <c>parse="text"</c> (SP2) reads the target via
@@ -62,7 +64,7 @@ public static class XIncludeProcessor
     /// <param name="options">XInclude processing options (resolver, remote policy, depth).</param>
     /// <returns>The same <paramref name="doc"/>, with its <c>xi:include</c>s expanded.</returns>
     /// <exception cref="XIncludeException">
-    /// Thrown on a malformed <c>xi:include</c>, an unsupported feature (xpointer), a cyclic or
+    /// Thrown on a malformed <c>xi:include</c> (including a malformed xpointer), a cyclic or
     /// over-deep inclusion, or a resource error with no usable <c>xi:fallback</c>. A resource
     /// error that is recovered by an <c>xi:fallback</c> does not throw.
     /// </exception>
@@ -469,17 +471,25 @@ public static class XIncludeProcessor
     private static void SpliceNodeSet(
         XmlDocument masterDoc, XmlElement include, IReadOnlyList<XmlNode> selected, Uri target)
     {
-        // System.Xml surfaces an xpath1(//@a) selection as an XmlAttribute (NodeType.Attribute);
-        // it has no reachable namespace-node type, so the attribute check covers the practical
-        // "cannot be included as content" case in full.
+        // Reject any selected node that cannot be spliced as element content, before touching the
+        // tree (so a bad node never causes a partial splice). System.Xml surfaces an xpath1(//@a)
+        // selection as an XmlAttribute, and xpath1(/) as the Document node — neither can be a child
+        // of an element (Document/DocumentType/etc. also make ImportNode throw), so all such are a
+        // fatal malformed-include. Includable content is element/text/CDATA/comment/PI/entity-ref.
         foreach (var node in selected)
         {
-            if (node.NodeType == XmlNodeType.Attribute)
+            if (node.NodeType is XmlNodeType.Attribute
+                or XmlNodeType.Document
+                or XmlNodeType.DocumentType
+                or XmlNodeType.DocumentFragment
+                or XmlNodeType.XmlDeclaration
+                or XmlNodeType.Notation
+                or XmlNodeType.Entity)
             {
                 throw new XIncludeException(
                     XIncludeErrorKind.MalformedInclude,
                     isFatal: true,
-                    "xpointer selection includes an attribute node, which cannot be included as content.");
+                    $"xpointer selection includes a node ({node.NodeType}) that cannot be included as content.");
             }
         }
 

@@ -18,7 +18,7 @@ public enum XIncludeErrorKind
     MalformedInclude,
     /// <summary>An <c>xi:fallback</c> is misplaced or an <c>xi:include</c> has more than one.</summary>
     MalformedFallback,
-    /// <summary>A feature not implemented in this build (XPointer — SP3).</summary>
+    /// <summary>A requested XInclude feature is not implemented in this build.</summary>
     Unsupported,
 }
 

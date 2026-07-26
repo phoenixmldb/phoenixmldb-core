@@ -72,9 +72,19 @@ internal static class XPointerEvaluator
     {
         var nsmgr = new XmlNamespaceManager(target.NameTable);
         nsmgr.AddNamespace("xml", XmlNamespace);
-        // id is an NCName (no quotes possible), so a single-quoted literal is safe.
-        var matches = target.SelectNodes($"//*[@xml:id='{id}']", nsmgr);
-        return ToList(matches);
+        // A shorthand id is a validated NCName (no quotes possible), so the single-quoted literal
+        // is safe. An element() id-root step, however, is not pre-validated — a stray quote there
+        // makes the XPath literal syntactically invalid. Treat that as a malformed pointer (fatal)
+        // rather than letting the raw XPathException escape the evaluator's contract.
+        try
+        {
+            return ToList(target.SelectNodes($"//*[@xml:id='{id}']", nsmgr));
+        }
+        catch (XPathException ex)
+        {
+            throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
+                $"xpointer id '{id}' is not a valid NCName.", ex);
+        }
     }
 
     // Parse "scheme(data) scheme(data) ..." honoring the Framework escaping in data:
