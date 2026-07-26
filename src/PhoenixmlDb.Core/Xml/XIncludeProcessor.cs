@@ -74,7 +74,8 @@ public static class XIncludeProcessor
         ArgumentNullException.ThrowIfNull(baseUri);
         ArgumentNullException.ThrowIfNull(options);
 
-        var resolver = options.Resolver ?? new LocalFileResourceResolver { AllowRemote = options.AllowRemote };
+        var resolver = options.Resolver
+            ?? new LocalFileResourceResolver { AllowRemote = options.AllowRemote, MaxResourceBytes = options.MaxResourceBytes };
 
         // Active-inclusion URI stack: the master document's own URI plus every ancestor
         // target currently being expanded. A target URI already on the stack is a cycle.

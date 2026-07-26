@@ -21,6 +21,12 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
     public bool AllowRemote { get; init; }
 
     /// <summary>
+    /// Maximum size (characters for XML, bytes for text) of a single resolved resource; <c>&lt;= 0</c>
+    /// = unlimited. An oversized resource surfaces as a resource error (fallback-eligible).
+    /// </summary>
+    public long MaxResourceBytes { get; init; }
+
+    /// <summary>
     /// Shared client for the (opt-in) <c>AllowRemote</c> <c>parse="text"</c> fetch. Auto-redirect
     /// is disabled so an allowed fetch cannot be bounced to an unintended host (e.g. a cloud
     /// metadata endpoint), and a bounded timeout prevents a hung remote from stalling the caller.
@@ -52,6 +58,10 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
             IgnoreWhitespace = false,
             CloseInput = true,
         };
+        if (MaxResourceBytes > 0)
+        {
+            settings.MaxCharactersInDocument = MaxResourceBytes;
+        }
 
         // Uri.IsFile is true for BOTH local paths (file:///c:/x.xml) and UNC paths
         // (file://attacker-host/share/x.xml, IsUnc == true, LocalPath == \\attacker-host\
@@ -95,6 +105,10 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
             IgnoreWhitespace = false,
             CloseInput = true,
         };
+        if (MaxResourceBytes > 0)
+        {
+            remoteSettings.MaxCharactersInDocument = MaxResourceBytes;
+        }
 
         return XmlReader.Create(absolute.AbsoluteUri, remoteSettings);
     }
@@ -136,6 +150,16 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
         {
             try
             {
+                if (MaxResourceBytes > 0)
+                {
+                    var len = new FileInfo(absolute.LocalPath).Length;
+                    if (len > MaxResourceBytes)
+                    {
+                        throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                            $"resource '{absolute}' exceeds MaxResourceBytes ({MaxResourceBytes}).");
+                    }
+                }
+
                 var bytes = File.ReadAllBytes(absolute.LocalPath);
                 // Explicit encoding wins; else detect BOM; else UTF-8.
                 if (enc != null)
@@ -179,6 +203,13 @@ public sealed class LocalFileResourceResolver : IXmlResourceResolver
 
             using var resp = RemoteTextClient.Send(req);
             resp.EnsureSuccessStatusCode();
+            if (MaxResourceBytes > 0 && resp.Content.Headers.ContentLength is { } contentLength
+                && contentLength > MaxResourceBytes)
+            {
+                throw new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                    $"resource '{absolute}' exceeds MaxResourceBytes ({MaxResourceBytes}).");
+            }
+
             var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             if (enc != null)
             {

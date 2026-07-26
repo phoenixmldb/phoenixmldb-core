@@ -108,4 +108,29 @@ public sealed class XIncludeLimitsTests
         result.SelectNodes("/root/a")!.Count.Should().Be(1);
         result.SelectNodes("/root/b")!.Count.Should().Be(1);
     }
+
+    [Fact]
+    public void Oversized_xml_resource_is_a_resource_error_recoverable_by_fallback()
+    {
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xi-lim-" + System.Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(dir);
+        try
+        {
+            // A big.xml comfortably over a tiny MaxResourceBytes.
+            var big = "<big>" + new string('x', 5000) + "</big>";
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "big.xml"), big);
+            var masterUri = new System.Uri(System.IO.Path.Combine(dir, "m.xml"));
+            const string ns = "http://www.w3.org/2001/XInclude";
+            var master = LoadDoc(
+                $"<m xmlns:xi='{ns}'><xi:include href='big.xml'>" +
+                "<xi:fallback><fb>small</fb></xi:fallback></xi:include></m>");
+
+            var result = XIncludeProcessor.Expand(master, masterUri,
+                new XIncludeOptions { MaxResourceBytes = 500 });
+
+            // Oversized resource → resource error → fallback recovers.
+            result.SelectNodes("//fb[.='small']")!.Count.Should().Be(1);
+        }
+        finally { System.IO.Directory.Delete(dir, recursive: true); }
+    }
 }
