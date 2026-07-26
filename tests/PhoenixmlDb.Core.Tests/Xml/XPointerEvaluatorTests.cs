@@ -86,4 +86,41 @@ public sealed class XPointerEvaluatorTests
         act.Should().Throw<XIncludeException>()
             .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
+
+    [Fact]
+    public void Xpath1_selects_nodes()
+    {
+        var d = Doc("<r><x>1</x><x>2</x></r>");
+        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)");
+        nodes.Should().HaveCount(2);
+        nodes.Select(nd => nd.InnerText).Should().Equal("1", "2");
+    }
+
+    [Fact]
+    public void Xmlns_then_xpath1_binds_prefix()
+    {
+        var d = Doc("<r xmlns:foo='urn:foo'><foo:e>hit</foo:e><e>miss</e></r>");
+        var nodes = XPointerEvaluator.Evaluate(d, "xmlns(p=urn:foo)xpath1(//p:e)");
+        nodes.Should().ContainSingle();
+        nodes[0].InnerText.Should().Be("hit");
+    }
+
+    [Fact]
+    public void Multi_part_first_empty_second_wins()
+    {
+        var d = Doc("<r><a xml:id='real'>found</a></r>");
+        // element(/1/9) selects nothing → fall through to element(real).
+        var nodes = XPointerEvaluator.Evaluate(d, "element(/1/9)element(real)");
+        nodes.Should().ContainSingle();
+        nodes[0].InnerText.Should().Be("found");
+    }
+
+    [Fact]
+    public void Xpath1_invalid_expression_is_fatal()
+    {
+        var d = Doc("<r/>");
+        var act = () => XPointerEvaluator.Evaluate(d, "xpath1(this is not xpath)");
+        act.Should().Throw<XIncludeException>()
+            .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
+    }
 }

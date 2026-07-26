@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Xml;
+using System.Xml.XPath;
 
 namespace PhoenixmlDb.Core.Xml;
 
@@ -44,7 +45,7 @@ internal static class XPointerEvaluator
                     break;
                 case "xpath1":
                     var xp = EvaluateXPath1(target, data, nsmgr);
-                    if (xp.Length > 0) return xp;
+                    if (xp.Count > 0) return xp;
                     break;
                 default:
                     // Unknown scheme part is ignored per the XPointer Framework; try the next.
@@ -188,9 +189,18 @@ internal static class XPointerEvaluator
         return null;
     }
 
-    // Stub completed in Task 3.
-    private static XmlNode[] EvaluateXPath1(XmlDocument target, string data, XmlNamespaceManager nsmgr)
-        => Array.Empty<XmlNode>();
+    private static IReadOnlyList<XmlNode> EvaluateXPath1(XmlDocument target, string data, XmlNamespaceManager nsmgr)
+    {
+        try
+        {
+            return ToList(target.SelectNodes(data, nsmgr));
+        }
+        catch (XPathException ex)
+        {
+            throw new XIncludeException(XIncludeErrorKind.MalformedInclude, isFatal: true,
+                $"xpath1() expression is not valid XPath: '{data}'.", ex);
+        }
+    }
 
     private static IReadOnlyList<XmlNode> ToList(XmlNodeList? nodes)
     {
