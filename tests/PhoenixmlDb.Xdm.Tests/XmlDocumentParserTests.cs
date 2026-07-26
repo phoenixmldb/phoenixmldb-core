@@ -505,6 +505,109 @@ public class XmlDocumentParserTests
 
     #endregion
 
+    #region Adjacent Character-Data Coalescing (XDM: no two consecutive text nodes)
+
+    [Fact]
+    public void Parse_TextThenCDATAThenText_CoalescesIntoSingleTextNode()
+    {
+        // XmlReader raises three character-data events (Text, CDATA, Text). XDM requires a
+        // single text node whose value is the concatenation — no consecutive text siblings.
+        const string xml = "<r>abc<![CDATA[def]]>ghi</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(1);
+        texts[0].Value.Should().Be("abcdefghi");
+
+        // The element must have exactly one text child.
+        var root = result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "r");
+        root.Children.Should().HaveCount(1);
+        (result.Nodes.Single(n => n.Id == root.Children[0])).Should().BeOfType<XdmText>();
+    }
+
+    [Fact]
+    public void Parse_LeadingCDATAThenText_CoalescesIntoSingleTextNode()
+    {
+        const string xml = "<r><![CDATA[abc]]>def</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(1);
+        texts[0].Value.Should().Be("abcdef");
+    }
+
+    [Fact]
+    public void Parse_ElementBreaksTextRun_YieldsSeparateTextNodes()
+    {
+        // An intervening element legitimately separates two text nodes (XDM).
+        const string xml = "<r>a<b/>c</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(2);
+        texts.Select(t => t.Value).Should().BeEquivalentTo(["a", "c"]);
+    }
+
+    [Fact]
+    public void Parse_CommentBreaksTextRun_YieldsSeparateTextNodes()
+    {
+        // An intervening comment legitimately separates two text nodes (XDM).
+        const string xml = "<r>a<!--x-->b</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(2);
+        texts.Select(t => t.Value).Should().BeEquivalentTo(["a", "b"]);
+    }
+
+    [Fact]
+    public void Parse_PIBreaksTextRun_YieldsSeparateTextNodes()
+    {
+        // An intervening processing instruction legitimately separates two text nodes (XDM).
+        const string xml = "<r>a<?pi data?>b</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(2);
+        texts.Select(t => t.Value).Should().BeEquivalentTo(["a", "b"]);
+    }
+
+    [Fact]
+    public void Parse_MultipleCDATARuns_EachSeparatedByElement()
+    {
+        const string xml = "<r>a<![CDATA[b]]>c<x/>d<![CDATA[e]]>f</r>";
+        var result = ParseXml(xml);
+
+        var texts = result.Nodes.OfType<XdmText>().ToList();
+        texts.Should().HaveCount(2);
+        texts.Select(t => t.Value).Should().BeEquivalentTo(["abc", "def"]);
+    }
+
+    [Fact]
+    public void Parse_CoalescedRun_PreservesFirstEventSourcePosition()
+    {
+        // Source line/column of the coalesced node come from the FIRST event in the run.
+        const string xml = "<r>abc<![CDATA[def]]>ghi</r>";
+        var result = ParseXml(xml);
+
+        var text = result.Nodes.OfType<XdmText>().Single();
+        // The text run starts at column 4 (1-based) on line 1: just after "<r>".
+        text.SourceLine.Should().Be(1);
+        text.SourceColumn.Should().Be(4);
+    }
+
+    [Fact]
+    public void Parse_CoalescedRun_ElementStringValueIsConcatenation()
+    {
+        const string xml = "<r>abc<![CDATA[def]]>ghi</r>";
+        var result = ParseXml(xml);
+
+        var root = result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "r");
+        root.StringValue.Should().Be("abcdefghi");
+    }
+
+    #endregion
+
     #region Complex Documents
 
     [Fact]
