@@ -175,8 +175,15 @@ public static class XIncludeProcessor
                 $"xi:include has invalid parse='{parse}'.");
         }
 
-        // href is required here: a same-document xpointer-only include (href absent) is out of
-        // scope for this build and is a fatal error until same-document selection is added.
+        // Same-document inclusion: an xpointer with no href selects from the master document
+        // itself.
+        if (xpointer is not null && string.IsNullOrEmpty(href))
+        {
+            ProcessSameDocumentXPointer(masterDoc, include, xpointer, baseUri, options, resolver, activeStack);
+            return;
+        }
+
+        // href is required here: an include with neither href nor xpointer is malformed.
         if (string.IsNullOrEmpty(href))
         {
             throw new XIncludeException(
@@ -329,6 +336,105 @@ public static class XIncludeProcessor
     }
 
     /// <summary>
+    /// Handles an <c>xi:include</c> with an <c>xpointer</c>/<c>fragid</c> and no <c>href</c>:
+    /// the selection is evaluated against <paramref name="masterDoc"/> itself (same-document
+    /// XPointer). A selection that is, or contains, the <c>xi:include</c> element is a fatal
+    /// <see cref="XIncludeErrorKind.Cyclic"/> (containment-based cyclic guard — the URI-stack
+    /// guard used for fetched targets doesn't apply here since there is no target URI). Any
+    /// nested <c>xi:include</c> within the selected subtree is expanded (against the master's
+    /// own base URI, tracked on the same active stack; <see cref="XIncludeOptions.MaxIncludeDepth"/>
+    /// remains the runaway backstop) before the copies are spliced in.
+    /// </summary>
+    private static void ProcessSameDocumentXPointer(
+        XmlDocument masterDoc, XmlElement include, string xpointer, Uri baseUri,
+        XIncludeOptions options, IXmlResourceResolver resolver, List<Uri> activeStack)
+    {
+        // Resolve any single xi:fallback up front (same rule as the fetched-target path).
+        XmlElement? fallback = null;
+        var fallbacks = new List<XmlElement>();
+        foreach (XmlNode c in include.ChildNodes)
+        {
+            if (IsXIncludeFallback(c))
+            {
+                fallbacks.Add((XmlElement)c);
+            }
+        }
+
+        if (fallbacks.Count > 1)
+        {
+            throw new XIncludeException(
+                XIncludeErrorKind.MalformedFallback,
+                isFatal: true,
+                "xi:include has more than one xi:fallback.");
+        }
+
+        if (fallbacks.Count == 1)
+        {
+            fallback = fallbacks[0];
+        }
+
+        var selected = XPointerEvaluator.Evaluate(masterDoc, xpointer);
+        if (selected.Count == 0)
+        {
+            RecoverWithFallback(masterDoc, include, fallback, baseUri, options, resolver, activeStack,
+                new XIncludeException(XIncludeErrorKind.ResourceError, isFatal: false,
+                    $"same-document xpointer '{xpointer}' selected no nodes."),
+                baseUri);
+            return;
+        }
+
+        // Cyclic guard by containment: including a node that is, or contains, the xi:include
+        // would re-include the include itself.
+        foreach (var node in selected)
+        {
+            if (node == include || IsAncestorOrSelf(node, include))
+            {
+                throw new XIncludeException(
+                    XIncludeErrorKind.Cyclic,
+                    isFatal: true,
+                    $"same-document xpointer '{xpointer}' selects a node containing the xi:include (cyclic).");
+            }
+        }
+
+        // Import copies, expand any nested xi:include within them (master base URI; same active
+        // stack; MaxIncludeDepth is the runaway backstop), then splice. The imported copies live
+        // in masterDoc; expand them in place before they are inserted.
+        var expanded = new List<XmlNode>(selected.Count);
+        foreach (var node in selected)
+        {
+            var imported = masterDoc.ImportNode(node, deep: true);
+            if (imported is XmlElement)
+            {
+                ExpandNode(masterDoc, imported, baseUri, options, resolver, activeStack);
+            }
+
+            expanded.Add(imported);
+        }
+
+        // Splice the (already-imported, already-expanded) copies; SpliceNodeSet skips
+        // re-importing a node already owned by masterDoc, so the expanded state survives. Base
+        // URI for same-document content is the master's own base.
+        SpliceNodeSet(masterDoc, include, expanded, baseUri);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="candidateAncestor"/> is <paramref name="node"/> itself or
+    /// one of its ancestors (walked via <see cref="XmlNode.ParentNode"/>).
+    /// </summary>
+    private static bool IsAncestorOrSelf(XmlNode candidateAncestor, XmlNode node)
+    {
+        for (var n = node; n is not null; n = n.ParentNode)
+        {
+            if (ReferenceEquals(n, candidateAncestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Imports each node in <paramref name="selected"/> into <paramref name="masterDoc"/> and
     /// inserts them, in document order, in place of <paramref name="include"/>. Applies XInclude
     /// §4.5 <c>xml:base</c>/<c>xml:lang</c> fixup to each top-level included <em>element</em>
@@ -356,7 +462,12 @@ public static class XIncludeProcessor
         var inScopeLang = GetInScopeLang(include);
         foreach (var node in selected)
         {
-            var imported = masterDoc.ImportNode(node, deep: true);
+            // A same-document XPointer selection is already imported (and, for elements, already
+            // expanded) into masterDoc by ProcessSameDocumentXPointer; re-importing it here would
+            // needlessly clone it and lose that expanded state.
+            var imported = ReferenceEquals(node.OwnerDocument, masterDoc)
+                ? node
+                : masterDoc.ImportNode(node, deep: true);
 
             // XInclude 1.0 §4.5 fixup: stamp xml:base/xml:lang on each top-level included
             // element only (descendants keep resolving through this + their own existing

@@ -465,4 +465,48 @@ public sealed class XIncludeProcessorTests : IDisposable
 
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
+
+    [Fact]
+    public void Same_document_xpointer_selects_from_master()
+    {
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\"><src><a xml:id='k'>picked</a></src>" +
+            "<xi:include xpointer=\"k\"/></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        // The <a xml:id='k'> content is included at the xi:include position (now two copies of 'picked').
+        result.SelectNodes("//a[.='picked']")!.Count.Should().Be(2);
+        result.GetElementsByTagName("include", XiNs).Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Same_document_selection_expands_nested_include()
+    {
+        Write("ext.xml", "<ext>fromfile</ext>");
+        var masterUri = BaseFor("master.xml");
+        var master = LoadMaster(
+            $"<m xmlns:xi=\"{XiNs}\">" +
+            $"<src><box xml:id='b'><xi:include href='ext.xml'/></box></src>" +
+            "<xi:include xpointer=\"b\"/></m>");
+
+        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        // The same-document selection of <box> carried a nested include that must expand.
+        result.SelectNodes("//ext[.='fromfile']")!.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public void Same_document_self_inclusion_is_fatal_cyclic()
+    {
+        var masterUri = BaseFor("master.xml");
+        // xpointer selects the root, which contains the xi:include itself → cyclic.
+        var master = LoadMaster(
+            $"<m xml:id='root' xmlns:xi=\"{XiNs}\"><xi:include xpointer=\"root\"/></m>");
+
+        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+
+        act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.Cyclic);
+    }
 }
