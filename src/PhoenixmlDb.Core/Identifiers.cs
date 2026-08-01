@@ -240,17 +240,34 @@ public readonly record struct NamespaceId(uint Value) : IComparable<NamespaceId>
     public static NamespaceId Math => new(8);
 
     /// <summary>
-    /// The PhoenixmlDb extension namespace (<c>http://phoenixml.endpointsystems.com/dbxml</c>).
-    /// Contains database-specific extension functions for use in XQuery expressions.
-    /// Conventionally bound to the <c>dbxml</c> prefix.
+    /// The PhoenixmlDb extension namespace (<c>https://schemas.phoenixml.dev/2026/db</c>).
+    /// Contains database extension functions for use in XQuery expressions.
+    /// Conventionally bound to the <c>phx</c> prefix, which the engine pre-declares.
     /// </summary>
-    public static NamespaceId Dbxml => new(9);
+    public static NamespaceId PhoenixmlDb => new(9);
 
     /// <summary>
     /// The XSLT namespace (<c>http://www.w3.org/1999/XSL/Transform</c>).
     /// Used for XSLT stylesheet elements. Conventionally bound to the <c>xsl</c> prefix.
     /// </summary>
     public static NamespaceId Xslt => new(10);
+
+    /// <summary>
+    /// The PhoenixmlDb reserved document-metadata namespace
+    /// (<c>https://schemas.phoenixml.dev/2026/meta</c>). Engine-set metadata such as
+    /// content type and size. Conventionally bound to the <c>phxm</c> prefix.
+    /// </summary>
+    public static NamespaceId PhoenixmlMeta => new(11);
+
+    /// <summary>
+    /// Dublin Core Terms (<c>http://purl.org/dc/terms/</c>). The standard vocabulary for
+    /// document metadata. Conventionally bound to the <c>dcterms</c> prefix.
+    /// </summary>
+    /// <remarks>
+    /// The URI is <c>http</c>, not <c>https</c>. That is Dublin Core's actual namespace
+    /// identity; changing the scheme would change the identity.
+    /// </remarks>
+    public static NamespaceId DcTerms => new(12);
 
     /// <summary>
     /// The first namespace ID available for user-defined namespaces. IDs below this value
