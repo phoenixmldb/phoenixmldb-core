@@ -1719,4 +1719,114 @@ public readonly struct XdmValue : IEquatable<XdmValue>
     public static bool operator !=(XdmValue left, XdmValue right) => !left.Equals(right);
 
     public override string ToString() => AsString();
+
+    // CLR type mapping: the set of .NET types From<T>/To<T>/IsSupportedClrType recognize.
+    // Keep this list and the From<T> switch below in lock-step — a type added to one and
+    // not the other silently breaks round-tripping.
+    private static readonly HashSet<Type> SupportedClrTypes =
+    [
+        typeof(string), typeof(bool), typeof(long), typeof(int), typeof(short), typeof(byte),
+        typeof(decimal), typeof(double), typeof(float), typeof(DateTimeOffset), typeof(DateOnly),
+        typeof(TimeOnly), typeof(TimeSpan), typeof(Uri), typeof(XdmQName), typeof(byte[]),
+    ];
+
+    /// <summary>
+    /// Determines whether <see cref="From{T}"/> and <see cref="To{T}"/> support the given
+    /// CLR type. <c>Nullable&lt;T&gt;</c> wrappers are supported wherever their underlying
+    /// type is.
+    /// </summary>
+    public static bool IsSupportedClrType(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        return SupportedClrTypes.Contains(Nullable.GetUnderlyingType(type) ?? type);
+    }
+
+    /// <summary>
+    /// Converts a supported CLR value to its XDM representation. This is the single
+    /// conversion point from .NET types to XDM values.
+    /// </summary>
+    /// <remarks>
+    /// <c>PhoenixmlDb.Linq</c> delegates to this instead of maintaining its own parallel
+    /// <c>Type</c>-to-XDM map, so the two projects cannot drift apart on how a given CLR
+    /// type is represented.
+    /// </remarks>
+    /// <param name="value">
+    /// The value to convert. Dispatch is on the value's runtime type, so
+    /// <c>From&lt;object&gt;("x")</c> and <c>From&lt;string&gt;("x")</c> both produce
+    /// <see cref="XsString"/> — a metadata value's XDM type is a property of what it
+    /// actually holds, not of how it happens to be typed at the call site. A <c>null</c>
+    /// reference or unset <c>Nullable&lt;T&gt;</c> produces <see cref="Empty"/>.
+    /// </param>
+    /// <exception cref="NotSupportedException">The CLR type has no XDM equivalent.</exception>
+    public static XdmValue From<T>(T value) => value switch
+    {
+        string s          => XsString(s),
+        bool b            => Boolean(b),
+        long l            => XsInteger(l),
+        int i             => XsInteger(i),
+        short sh          => XsInteger(sh),
+        byte by           => XsInteger(by),
+        decimal d         => XsDecimal(d),
+        double db         => XsDouble(db),
+        float f           => XsFloat(f),
+        DateTimeOffset dt => DateTime(dt),
+        DateOnly dateOnly => Date(dateOnly),
+        TimeOnly timeOnly => Time(timeOnly),
+        TimeSpan ts       => Duration(ts),
+        Uri u             => AnyUri(u),
+        XdmQName q        => QName(q),
+        byte[] bin        => Base64Binary(bin),
+        XdmValue v        => v,
+        null              => Empty,
+        _ => throw new NotSupportedException(
+            $"No XDM representation for CLR type '{typeof(T).Name}'. Supported types: " +
+            "string, bool, long, int, short, byte, decimal, double, float, DateTimeOffset, " +
+            "DateOnly, TimeOnly, TimeSpan, Uri, XdmQName, byte[].")
+    };
+
+    /// <summary>
+    /// Converts this value to a supported CLR type, applying the same numeric
+    /// widening/narrowing as the <c>As*</c> accessors (e.g. an <c>xs:integer</c> reads
+    /// back as <see cref="int"/> or <see cref="short"/>, not just <see cref="long"/>).
+    /// </summary>
+    /// <typeparam name="T">
+    /// The requested CLR type. <c>Nullable&lt;T&gt;</c> wrappers are supported wherever
+    /// their underlying type is; requesting <see cref="XdmValue"/> itself returns the
+    /// value unchanged.
+    /// </typeparam>
+    /// <exception cref="NotSupportedException">The CLR type has no XDM equivalent.</exception>
+    /// <exception cref="InvalidCastException">
+    /// This value cannot be converted to <typeparamref name="T"/> (e.g. converting an
+    /// empty value to <see cref="XdmQName"/> or <see cref="Uri"/>, neither of which has a
+    /// meaningful empty representation).
+    /// </exception>
+    public static T To<T>(XdmValue value)
+    {
+        var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        if (target == typeof(XdmValue)) return (T)(object)value;
+
+        object boxed = target switch
+        {
+            _ when target == typeof(string)         => value.AsString(),
+            _ when target == typeof(bool)            => value.AsBoolean(),
+            _ when target == typeof(long)            => value.AsLong(),
+            _ when target == typeof(int)             => value.AsInt(),
+            _ when target == typeof(short)           => (short)value.AsLong(),
+            _ when target == typeof(byte)            => (byte)value.AsLong(),
+            _ when target == typeof(decimal)         => value.AsDecimal(),
+            _ when target == typeof(double)          => value.AsDouble(),
+            _ when target == typeof(float)           => value.AsFloat(),
+            _ when target == typeof(DateTimeOffset)  => value.AsDateTime(),
+            _ when target == typeof(DateOnly)        => value.AsDate(),
+            _ when target == typeof(TimeOnly)        => value.AsTime(),
+            _ when target == typeof(TimeSpan)        => value.AsDuration(),
+            _ when target == typeof(Uri)             => value.AsUri(),
+            _ when target == typeof(XdmQName)        => value.AsQName(),
+            _ when target == typeof(byte[])          => value.AsBinary(),
+            _ => throw new NotSupportedException(
+                $"No XDM representation for CLR type '{target.Name}'.")
+        };
+
+        return (T)boxed;
+    }
 }
