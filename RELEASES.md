@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Packaging
+
+- Exception stack traces from shipped assemblies no longer embed the absolute build-machine path (a `PathMap` maps the repo root to a repo-relative prefix, so a frame reads `phoenixmldb-core/src/…` instead of a local filesystem path). Line numbers are preserved. Release builds only.
+
 ## 1.3.0 — 2026-07-27
 
 ### XInclude 1.0 (complete): `parse="xml"` + `parse="text"` + `xi:fallback` + XPointer
