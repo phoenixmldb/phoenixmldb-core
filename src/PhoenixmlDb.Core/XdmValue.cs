@@ -1720,25 +1720,122 @@ public readonly struct XdmValue : IEquatable<XdmValue>
 
     public override string ToString() => AsString();
 
-    // CLR type mapping: the set of .NET types From<T>/To<T>/IsSupportedClrType recognize.
-    // Keep this list and the From<T> switch below in lock-step — a type added to one and
-    // not the other silently breaks round-tripping.
-    private static readonly HashSet<Type> SupportedClrTypes =
-    [
-        typeof(string), typeof(bool), typeof(long), typeof(int), typeof(short), typeof(byte),
-        typeof(decimal), typeof(double), typeof(float), typeof(DateTimeOffset), typeof(DateOnly),
-        typeof(TimeOnly), typeof(TimeSpan), typeof(Uri), typeof(XdmQName), typeof(byte[]),
-    ];
+    // Single source of truth for CLR <-> XDM conversion. From<T>, To<T>, and
+    // IsSupportedClrType all read this one table, so there is exactly one place that
+    // declares "long maps to xs:integer" instead of three declarations that can drift —
+    // the same failure mode (independent declarations of the same fact) that this rework
+    // exists to close for namespace ids.
+    //
+    // `StoredAs` lists every XdmType that To<T> will accept for that CLR type; most CLR
+    // types accept exactly one, but double/float accept each other's stored type (in
+    // opposite widening directions) and byte[] accepts either binary encoding.
+    private readonly record struct ClrTypeMapping(
+        Func<object, XdmValue> From,
+        XdmType[] StoredAs,
+        Func<XdmValue, object> To);
+
+    private static readonly IReadOnlyDictionary<Type, ClrTypeMapping> ClrTypeMap =
+        new Dictionary<Type, ClrTypeMapping>
+        {
+            [typeof(string)] = new(
+                From: v => XsString((string)v),
+                StoredAs: [XdmType.XsString],
+                To: v => (string)v.RawValue!),
+
+            [typeof(bool)] = new(
+                From: v => Boolean((bool)v),
+                StoredAs: [XdmType.Boolean],
+                To: v => (bool)v.RawValue!),
+
+            [typeof(long)] = new(
+                From: v => XsInteger((long)v),
+                StoredAs: [XdmType.XsInteger],
+                To: v => (long)v.RawValue!),
+
+            [typeof(int)] = new(
+                From: v => XsInteger((int)v),
+                StoredAs: [XdmType.XsInteger],
+                To: v => checked((int)(long)v.RawValue!)),
+
+            [typeof(short)] = new(
+                From: v => XsInteger((short)v),
+                StoredAs: [XdmType.XsInteger],
+                To: v => checked((short)(long)v.RawValue!)),
+
+            [typeof(byte)] = new(
+                From: v => XsInteger((byte)v),
+                StoredAs: [XdmType.XsInteger],
+                To: v => checked((byte)(long)v.RawValue!)),
+
+            [typeof(decimal)] = new(
+                From: v => XsDecimal((decimal)v),
+                StoredAs: [XdmType.XsDecimal],
+                To: v => (decimal)v.RawValue!),
+
+            [typeof(double)] = new(
+                From: v => XsDouble((double)v),
+                StoredAs: [XdmType.XsDouble, XdmType.XsFloat],
+                To: v => v.Type == XdmType.XsFloat ? (double)(float)v.RawValue! : (double)v.RawValue!),
+
+            [typeof(float)] = new(
+                From: v => XsFloat((float)v),
+                StoredAs: [XdmType.XsDouble, XdmType.XsFloat],
+                To: v => v.Type == XdmType.XsDouble ? (float)(double)v.RawValue! : (float)v.RawValue!),
+
+            [typeof(DateTimeOffset)] = new(
+                From: v => DateTime((DateTimeOffset)v),
+                StoredAs: [XdmType.DateTime],
+                To: v => (DateTimeOffset)v.RawValue!),
+
+            [typeof(DateOnly)] = new(
+                From: v => Date((DateOnly)v),
+                StoredAs: [XdmType.Date],
+                To: v => (DateOnly)v.RawValue!),
+
+            [typeof(TimeOnly)] = new(
+                From: v => Time((TimeOnly)v),
+                StoredAs: [XdmType.Time],
+                To: v => (TimeOnly)v.RawValue!),
+
+            [typeof(TimeSpan)] = new(
+                From: v => Duration((TimeSpan)v),
+                StoredAs: [XdmType.Duration],
+                To: v => (TimeSpan)v.RawValue!),
+
+            [typeof(Uri)] = new(
+                From: v => AnyUri((Uri)v),
+                StoredAs: [XdmType.AnyUri],
+                To: v => (Uri)v.RawValue!),
+
+            [typeof(XdmQName)] = new(
+                From: v => QName((XdmQName)v),
+                StoredAs: [XdmType.QName],
+                To: v => (XdmQName)v.RawValue!),
+
+            [typeof(byte[])] = new(
+                From: v => Base64Binary((byte[])v),
+                StoredAs: [XdmType.Base64Binary, XdmType.HexBinary],
+                To: v => (byte[])v.RawValue!),
+        };
 
     /// <summary>
     /// Determines whether <see cref="From{T}"/> and <see cref="To{T}"/> support the given
-    /// CLR type. <c>Nullable&lt;T&gt;</c> wrappers are supported wherever their underlying
-    /// type is.
+    /// CLR type.
     /// </summary>
+    /// <remarks>
+    /// <c>Nullable&lt;T&gt;</c> wrappers are supported wherever their underlying type is.
+    /// <see cref="object"/> and <see cref="XdmValue"/> are always reported as supported:
+    /// <see cref="From{T}"/> dispatches on the value's runtime type rather than the
+    /// compile-time type argument, so a caller guarding a call with
+    /// <c>IsSupportedClrType(typeof(T))</c> before invoking <c>From&lt;T&gt;</c> must not
+    /// be turned away just because <c>T</c> is <see cref="object"/> — whether the call
+    /// actually succeeds still depends on what the value holds at run time.
+    /// </remarks>
     public static bool IsSupportedClrType(Type type)
     {
         ArgumentNullException.ThrowIfNull(type);
-        return SupportedClrTypes.Contains(Nullable.GetUnderlyingType(type) ?? type);
+        var target = Nullable.GetUnderlyingType(type) ?? type;
+        return target == typeof(object) || target == typeof(XdmValue) || ClrTypeMap.ContainsKey(target);
     }
 
     /// <summary>
@@ -1758,75 +1855,63 @@ public readonly struct XdmValue : IEquatable<XdmValue>
     /// reference or unset <c>Nullable&lt;T&gt;</c> produces <see cref="Empty"/>.
     /// </param>
     /// <exception cref="NotSupportedException">The CLR type has no XDM equivalent.</exception>
-    public static XdmValue From<T>(T value) => value switch
+    public static XdmValue From<T>(T value)
     {
-        string s          => XsString(s),
-        bool b            => Boolean(b),
-        long l            => XsInteger(l),
-        int i             => XsInteger(i),
-        short sh          => XsInteger(sh),
-        byte by           => XsInteger(by),
-        decimal d         => XsDecimal(d),
-        double db         => XsDouble(db),
-        float f           => XsFloat(f),
-        DateTimeOffset dt => DateTime(dt),
-        DateOnly dateOnly => Date(dateOnly),
-        TimeOnly timeOnly => Time(timeOnly),
-        TimeSpan ts       => Duration(ts),
-        Uri u             => AnyUri(u),
-        XdmQName q        => QName(q),
-        byte[] bin        => Base64Binary(bin),
-        XdmValue v        => v,
-        null              => Empty,
-        _ => throw new NotSupportedException(
+        if (value is null) return Empty;
+        if (value is XdmValue passthrough) return passthrough;
+
+        if (ClrTypeMap.TryGetValue(value.GetType(), out var mapping))
+            return mapping.From(value);
+
+        throw new NotSupportedException(
             $"No XDM representation for CLR type '{typeof(T).Name}'. Supported types: " +
-            "string, bool, long, int, short, byte, decimal, double, float, DateTimeOffset, " +
-            "DateOnly, TimeOnly, TimeSpan, Uri, XdmQName, byte[].")
-    };
+            string.Join(", ", ClrTypeMap.Keys.Select(t => t.Name)) + ".");
+    }
 
     /// <summary>
-    /// Converts this value to a supported CLR type, applying the same numeric
-    /// widening/narrowing as the <c>As*</c> accessors (e.g. an <c>xs:integer</c> reads
-    /// back as <see cref="int"/> or <see cref="short"/>, not just <see cref="long"/>).
+    /// Converts this value to a supported CLR type. The stored <see cref="XdmType"/> must
+    /// match <typeparamref name="T"/>'s XDM family — this is a strict, storage-boundary
+    /// read, not the coercive casting the <c>As*</c> accessors perform for XPath
+    /// expression evaluation. Numeric widening/narrowing within a family is still
+    /// permitted (an <c>xs:integer</c> reads back as <see cref="long"/>, <see cref="int"/>,
+    /// <see cref="short"/>, or <see cref="byte"/>; an <c>xs:double</c>/<c>xs:float</c>
+    /// reads back as either <see cref="double"/> or <see cref="float"/>).
     /// </summary>
     /// <typeparam name="T">
     /// The requested CLR type. <c>Nullable&lt;T&gt;</c> wrappers are supported wherever
     /// their underlying type is; requesting <see cref="XdmValue"/> itself returns the
-    /// value unchanged.
+    /// value unchanged; requesting <see cref="object"/> returns whatever CLR value the
+    /// stored <see cref="XdmType"/> naturally boxes to (the mirror image of
+    /// <see cref="From{T}"/> dispatching on the runtime value for <c>T = object</c>).
     /// </typeparam>
     /// <exception cref="NotSupportedException">The CLR type has no XDM equivalent.</exception>
     /// <exception cref="InvalidCastException">
-    /// This value cannot be converted to <typeparamref name="T"/> (e.g. converting an
-    /// empty value to <see cref="XdmQName"/> or <see cref="Uri"/>, neither of which has a
-    /// meaningful empty representation).
+    /// The stored <see cref="XdmType"/> is not one <typeparamref name="T"/> can be read
+    /// from (e.g. requesting <see cref="int"/> from a value stored as <c>xs:string</c>).
+    /// </exception>
+    /// <exception cref="OverflowException">
+    /// The stored integer does not fit in the requested narrower CLR type (e.g.
+    /// requesting <see cref="byte"/> for a stored <c>xs:integer</c> of <c>300</c>).
     /// </exception>
     public static T To<T>(XdmValue value)
     {
         var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+
         if (target == typeof(XdmValue)) return (T)(object)value;
 
-        object boxed = target switch
-        {
-            _ when target == typeof(string)         => value.AsString(),
-            _ when target == typeof(bool)            => value.AsBoolean(),
-            _ when target == typeof(long)            => value.AsLong(),
-            _ when target == typeof(int)             => value.AsInt(),
-            _ when target == typeof(short)           => (short)value.AsLong(),
-            _ when target == typeof(byte)            => (byte)value.AsLong(),
-            _ when target == typeof(decimal)         => value.AsDecimal(),
-            _ when target == typeof(double)          => value.AsDouble(),
-            _ when target == typeof(float)           => value.AsFloat(),
-            _ when target == typeof(DateTimeOffset)  => value.AsDateTime(),
-            _ when target == typeof(DateOnly)        => value.AsDate(),
-            _ when target == typeof(TimeOnly)        => value.AsTime(),
-            _ when target == typeof(TimeSpan)        => value.AsDuration(),
-            _ when target == typeof(Uri)             => value.AsUri(),
-            _ when target == typeof(XdmQName)        => value.AsQName(),
-            _ when target == typeof(byte[])          => value.AsBinary(),
-            _ => throw new NotSupportedException(
-                $"No XDM representation for CLR type '{target.Name}'.")
-        };
+        if (target == typeof(object))
+            return value.IsEmpty ? default! : (T)(object)value.RawValue!;
 
-        return (T)boxed;
+        if (!ClrTypeMap.TryGetValue(target, out var mapping))
+            throw new NotSupportedException($"No XDM representation for CLR type '{target.Name}'.");
+
+        if (value.IsEmpty) return default!;
+
+        if (Array.IndexOf(mapping.StoredAs, value.Type) < 0)
+            throw new InvalidCastException(
+                $"Stored XDM type '{value.Type}' cannot be read as CLR type '{target.Name}' " +
+                $"(expected {string.Join(" or ", mapping.StoredAs)}).");
+
+        return (T)mapping.To(value);
     }
 }
