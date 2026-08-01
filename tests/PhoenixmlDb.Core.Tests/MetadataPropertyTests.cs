@@ -79,6 +79,49 @@ public class MetadataPropertyTests
     [Fact]
     public void ToString_UsesConventionalPrefix()
         => Status.ToString().Should().Be("phxm:status");
+
+    // The single most load-bearing property of MetadataProperty<T>: FromXdm is a bare
+    // pass-through to XdmValue.To<T> (Task 2), so a stored value of the wrong XDM type
+    // must fail loudly through the wrapper, not just through XdmValue directly.
+    [Fact]
+    public void FromXdm_TypeMismatch_Throws()
+    {
+        var stored = XdmValue.From(1024L); // xs:integer, not xs:string
+        var act = () => Status.FromXdm(stored);
+        act.Should().Throw<InvalidCastException>();
+    }
+
+    [Fact]
+    public void FromXdm_OverflowingNarrowing_Throws()
+    {
+        var byteProperty = new MetadataProperty<byte>(NamespaceId.PhoenixmlMeta, "count");
+        var stored = XdmValue.From(300L); // xs:integer 300 doesn't fit in a byte
+        var act = () => byteProperty.FromXdm(stored);
+        act.Should().Throw<OverflowException>();
+    }
+
+    [Fact]
+    public void FromXdm_Empty_ReturnsNull_ForReferenceType()
+        => Status.FromXdm(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void FromXdm_Empty_Throws_ForNonNullableValueType()
+    {
+        var longProperty = new MetadataProperty<long>(NamespaceId.PhoenixmlMeta, "count");
+        var act = () => longProperty.FromXdm(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>();
+    }
+
+    // XdmQName is a value type (readonly record struct), so it follows the non-nullable
+    // value-type arm too, not the reference-type arm — worth asserting explicitly since
+    // it's easy to mistake for a reference type at a glance.
+    [Fact]
+    public void FromXdm_Empty_Throws_ForXdmQName()
+    {
+        var qnameProperty = new MetadataProperty<XdmQName>(NamespaceId.PhoenixmlMeta, "ref");
+        var act = () => qnameProperty.FromXdm(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>();
+    }
 }
 
 public class MetadataCollectionTests
@@ -140,4 +183,15 @@ public class MetadataCollectionTests
     [Fact]
     public void Empty_HasNoEntries()
         => MetadataCollection.Empty.Count.Should().Be(0);
+
+    // Get<T> is a separate code path from MetadataProperty<T>.FromXdm (it goes through
+    // the indexer first), so the strictness has to be verified through it independently.
+    [Fact]
+    public void Get_TypeMismatch_Throws()
+    {
+        var meta = Build();
+        var wrongType = new MetadataProperty<DateTimeOffset>(Status.Namespace, Status.Name);
+        var act = () => meta.Get(wrongType);
+        act.Should().Throw<InvalidCastException>();
+    }
 }

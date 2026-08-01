@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using PhoenixmlDb.Xdm;
 
 namespace PhoenixmlDb.Core.Metadata;
@@ -26,6 +27,8 @@ public sealed class MetadataCollection : IReadOnlyCollection<KeyValuePair<XdmQNa
     public int Count => _entries.Count;
 
     /// <summary>The raw XDM value for a qualified name, or null if absent.</summary>
+    [SuppressMessage("Design", "CA1043:Use Integral Or String Argument For Indexers",
+        Justification = "XdmQName is this design's storage/index key — not an oversight.")]
     public XdmValue? this[XdmQName name] =>
         _entries.TryGetValue(name, out var v) ? v : null;
 
