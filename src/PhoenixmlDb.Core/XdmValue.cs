@@ -1877,17 +1877,35 @@ public readonly struct XdmValue : IEquatable<XdmValue>
     /// <see cref="short"/>, or <see cref="byte"/>; an <c>xs:double</c>/<c>xs:float</c>
     /// reads back as either <see cref="double"/> or <see cref="float"/>).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Empty"/> is handled by whether <typeparamref name="T"/> has a value
+    /// that can genuinely mean "absent": if <typeparamref name="T"/> is a reference type
+    /// or <c>Nullable&lt;V&gt;</c>, converting an empty value returns <c>null</c> — this
+    /// is what keeps <c>From&lt;string&gt;(null)</c> (which produces <see cref="Empty"/>)
+    /// and <c>To&lt;string&gt;()</c> genuine inverses of each other. If
+    /// <typeparamref name="T"/> is a non-nullable value type (<see cref="long"/>,
+    /// <see cref="DateTimeOffset"/>, etc.), there is no such thing as "the empty
+    /// <see cref="long"/>" — returning a default like <c>0</c> or year 1 would be a
+    /// silently wrong value indistinguishable from genuine data, so this throws
+    /// <see cref="InvalidCastException"/> instead.
+    /// </para>
+    /// </remarks>
     /// <typeparam name="T">
     /// The requested CLR type. <c>Nullable&lt;T&gt;</c> wrappers are supported wherever
     /// their underlying type is; requesting <see cref="XdmValue"/> itself returns the
     /// value unchanged; requesting <see cref="object"/> returns whatever CLR value the
     /// stored <see cref="XdmType"/> naturally boxes to (the mirror image of
-    /// <see cref="From{T}"/> dispatching on the runtime value for <c>T = object</c>).
+    /// <see cref="From{T}"/> dispatching on the runtime value for <c>T = object</c>), or
+    /// <c>null</c> for <see cref="Empty"/>.
     /// </typeparam>
     /// <exception cref="NotSupportedException">The CLR type has no XDM equivalent.</exception>
     /// <exception cref="InvalidCastException">
-    /// The stored <see cref="XdmType"/> is not one <typeparamref name="T"/> can be read
-    /// from (e.g. requesting <see cref="int"/> from a value stored as <c>xs:string</c>).
+    /// Either the stored <see cref="XdmType"/> is not one <typeparamref name="T"/> can be
+    /// read from (e.g. requesting <see cref="int"/> from a value stored as
+    /// <c>xs:string</c>), or this value is <see cref="Empty"/> and
+    /// <typeparamref name="T"/> is a non-nullable value type with no meaningful empty
+    /// representation.
     /// </exception>
     /// <exception cref="OverflowException">
     /// The stored integer does not fit in the requested narrower CLR type (e.g.
@@ -1895,7 +1913,9 @@ public readonly struct XdmValue : IEquatable<XdmValue>
     /// </exception>
     public static T To<T>(XdmValue value)
     {
-        var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        var underlying = Nullable.GetUnderlyingType(typeof(T));
+        var target = underlying ?? typeof(T);
+        var targetAcceptsNull = underlying is not null || !target.IsValueType;
 
         if (target == typeof(XdmValue)) return (T)(object)value;
 
@@ -1905,7 +1925,12 @@ public readonly struct XdmValue : IEquatable<XdmValue>
         if (!ClrTypeMap.TryGetValue(target, out var mapping))
             throw new NotSupportedException($"No XDM representation for CLR type '{target.Name}'.");
 
-        if (value.IsEmpty) return default!;
+        if (value.IsEmpty)
+        {
+            if (targetAcceptsNull) return default!;
+            throw new InvalidCastException(
+                $"An empty XdmValue has no representation as '{target.Name}'.");
+        }
 
         if (Array.IndexOf(mapping.StoredAs, value.Type) < 0)
             throw new InvalidCastException(

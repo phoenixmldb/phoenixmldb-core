@@ -260,4 +260,83 @@ public class XdmValueFromTests
         else
             roundTripped.Should().Be(sample);
     }
+
+    // --- Round 2 review finding: Empty must be an explicit, documented part of the
+    // contract rather than silently defaulting. Reference types (and `object`) round-trip
+    // Empty as null — the same null that produced Empty via From<T>(null) in the first
+    // place. Non-nullable value types have no meaningful "empty", so they throw rather
+    // than silently returning a default like 0 or year 0001. ---
+
+    [Fact]
+    public void To_String_FromEmpty_ReturnsNull()
+        => XdmValue.To<string>(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void To_Uri_FromEmpty_ReturnsNull()
+        => XdmValue.To<Uri>(XdmValue.Empty).Should().BeNull();
+
+    // XdmQName is a `readonly record struct` — a value type, not a reference type,
+    // despite superficially reading like a reference-type wrapper for a name. So it
+    // follows the *value-type* rule (throw on Empty for the bare type; null only through
+    // Nullable<XdmQName>), the same as long/DateTimeOffset/decimal below — not the
+    // reference-type rule that applies to string/Uri/byte[].
+    [Fact]
+    public void To_NullableXdmQName_FromEmpty_ReturnsNull()
+        => XdmValue.To<XdmQName?>(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void To_XdmQName_FromEmpty_ThrowsInvalidCastException()
+    {
+        var act = () => XdmValue.To<XdmQName>(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>().WithMessage("*XdmQName*");
+    }
+
+    [Fact]
+    public void To_ByteArray_FromEmpty_ReturnsNull()
+        => XdmValue.To<byte[]>(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void To_Object_FromEmpty_ReturnsNull()
+        => XdmValue.To<object>(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void To_Long_FromEmpty_ThrowsInvalidCastException()
+    {
+        var act = () => XdmValue.To<long>(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>().WithMessage("*Int64*");
+    }
+
+    [Fact]
+    public void To_DateTimeOffset_FromEmpty_ThrowsInvalidCastException()
+    {
+        var act = () => XdmValue.To<DateTimeOffset>(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>().WithMessage("*DateTimeOffset*");
+    }
+
+    [Fact]
+    public void To_Decimal_FromEmpty_ThrowsInvalidCastException()
+    {
+        var act = () => XdmValue.To<decimal>(XdmValue.Empty);
+        act.Should().Throw<InvalidCastException>().WithMessage("*Decimal*");
+    }
+
+    [Fact]
+    public void To_NullableInt_FromEmpty_ReturnsNull()
+        // Nullable<V> is reachable through the same ClrTypeMap lookup as `int` (the
+        // Nullable wrapper is unwrapped before the lookup), so Empty must produce null
+        // here too rather than throwing the way non-nullable `int` does.
+        => XdmValue.To<int?>(XdmValue.Empty).Should().BeNull();
+
+    [Fact]
+    public void From_NullString_ProducesEmpty_AndRoundTripsToNull()
+    {
+        // From<T>(null) -> Empty is the other half of the contract: To<string>(Empty)
+        // returning null (asserted above) is what makes this a genuine round trip
+        // rather than a lossy one.
+        string? nullString = null;
+        var stored = XdmValue.From(nullString);
+
+        stored.IsEmpty.Should().BeTrue();
+        XdmValue.To<string>(stored).Should().BeNull();
+    }
 }
