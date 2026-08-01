@@ -7,9 +7,6 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>1.3.0</Version>
-    <PackageReleaseNotes>
-      XInclude 1.0. Adds XIncludeProcessor, expanding xi:include (parse="xml" and parse="text") with xi:fallback recovery and the full W3C XPointer framework (shorthand, element(), xmlns(), xpath1()), including same-document references, before conversion to XDM. References resolve through a host-injectable IXmlResourceResolver; the default resolver is local-file-only unless AllowRemote is set, with DTD processing prohibited on every fetch (no XXE) and intervening xml:base honoured. Expansion is bounded against untrusted input via configurable limits (descent depth, produced-node count, per-resource size, and per-xpath1 evaluation time). Additive only; no public API removed. See RELEASES.md for full notes.
-    </PackageReleaseNotes>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-all</AnalysisLevel>
