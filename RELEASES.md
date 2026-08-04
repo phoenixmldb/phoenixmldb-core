@@ -2,9 +2,51 @@
 
 ## Unreleased
 
+## 1.4.0 — 2026-08-04
+
+Foundation for typed document metadata: a single conversion boundary between CLR values and XDM, a
+registry for well-known namespaces, and typed metadata property descriptors. Additive — no public
+API was removed.
+
+### `XdmValue.From<T>` / `To<T>` — one CLR-to-XDM conversion
+
+`XdmValue` gains a single, symmetric conversion pair, replacing ad-hoc per-call-site coercion.
+
+**`To<T>` is strict**, deliberately. The stored `XdmType` must match the requested `T`, with numeric
+widening the only implicit conversion; a mismatch throws `InvalidCastException` and an overflowing
+narrowing throws `OverflowException`. It does *not* inherit `AsLong()`'s XPath-style coercion, which
+parses strings into numbers — correct in an XPath expression, wrong at a typed storage boundary,
+where it would let a value round-trip as a different type than it was written as.
+
+**Empty-value semantics are explicit.** `From<T>(null)` produces `Empty`. `To<T>(Empty)` returns
+`null` for reference types and `Nullable<V>`, preserving the round-trip, and throws
+`InvalidCastException` for non-nullable value types — because `default(long)` is `0`, and silently
+returning `0` for an absent value is a lie the caller cannot detect. Note `XdmQName` is a
+`readonly record struct` and follows the value-type arm.
+
+### `NamespaceRegistry` — one source for well-known URIs
+
+Well-known namespace URIs and their conventional prefixes now live in one table rather than being
+restated at each use, so a URI typo cannot silently create a second namespace.
+
+### Typed metadata: `MetadataProperty<T>`, `MetadataCollection`, vocabularies
+
+`MetadataProperty<T>` is a typed, namespace-qualified property descriptor; `MetadataCollection`
+holds resolved values. Ships with `PhxMeta` (engine-reserved: `ContentType`, `Size`) and `DcTerms`
+(`Creator`, `Created`, `Title`).
+
+`MetadataProperty<object>` is **rejected in the constructor**. `IsSupportedClrType` returns `true`
+for `object` because runtime dispatch in `From` needs it, but a `MetadataProperty<object>` would
+defeat the type safety the descriptor exists to provide.
+
+There is no `TryGetValue` on `MetadataCollection` — the nullable `this[XdmQName]` indexer already
+expresses absence, and typed access is the `Get<T>` extension method, because C# cannot declare a
+generic indexer on a non-generic type.
+
 ### Packaging
 
 - Exception stack traces from shipped assemblies no longer embed the absolute build-machine path (a `PathMap` maps the repo root to a repo-relative prefix, so a frame reads `phoenixmldb-core/src/…` instead of a local filesystem path). Line numbers are preserved. Release builds only.
+- Release notes are delivered to `dotnet pack` from this file by CI at tag time rather than duplicated in `Directory.Build.props`, removing a source of drift between the two.
 
 ## 1.3.0 — 2026-07-27
 
