@@ -47,7 +47,7 @@ namespace PhoenixmlDb.Core;
 /// separately from the document content. Metadata is useful for classification, tagging,
 /// workflow state, or application-specific attributes. Metadata can be set at document
 /// creation time via <see cref="DocumentOptions.Metadata"/> or added later with
-/// <see cref="IContainer.SetMetadataAsync"/>.
+/// <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/>.
 /// </para>
 /// </remarks>
 /// <example>
@@ -195,7 +195,7 @@ public interface IDocument
     /// <returns>The metadata value if the key exists, or <c>null</c> if the key is not set.</returns>
     /// <remarks>
     /// Metadata is separate from document content — it consists of application-defined
-    /// key-value pairs. To retrieve all metadata at once, use <see cref="GetAllMetadataAsync"/>.
+    /// key-value pairs. To retrieve all metadata at once, use <see cref="IContainer.GetAllMetadataAsync(string, CancellationToken)"/>.
     /// </remarks>
     ValueTask<object?> GetMetadataAsync(string key, CancellationToken cancellationToken = default);
 
@@ -209,7 +209,7 @@ public interface IDocument
     /// </returns>
     /// <remarks>
     /// Use this when you need to inspect or display all metadata at once. For a single
-    /// known key, <see cref="GetMetadataAsync"/> is more direct.
+    /// known key, <see cref="IContainer.GetMetadataAsync(string, string, CancellationToken)"/> is more direct.
     /// </remarks>
     ValueTask<IReadOnlyDictionary<string, object>> GetAllMetadataAsync(
         CancellationToken cancellationToken = default);

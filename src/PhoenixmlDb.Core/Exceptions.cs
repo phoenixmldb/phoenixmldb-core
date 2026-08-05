@@ -87,7 +87,7 @@ public class ContainerNotFoundException : XmlDbException
 /// <remarks>
 /// <para>
 /// <b>When it's thrown:</b> By operations that require a document to exist, such as
-/// <see cref="IContainer.SetMetadataAsync"/> or <see cref="IWriteTransaction.SetMetadataAsync"/>
+/// <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/> or <see cref="IWriteTransaction.SetMetadataAsync(ContainerId, string, string, string, CancellationToken)"/>
 /// when the target document has not been stored. Note that
 /// <see cref="IContainer.GetDocumentAsync"/> returns <c>null</c> rather than throwing.
 /// </para>

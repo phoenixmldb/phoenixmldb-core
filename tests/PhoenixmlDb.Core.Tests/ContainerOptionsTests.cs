@@ -1,3 +1,4 @@
+using PhoenixmlDb.Xdm;
 using FluentAssertions;
 using Xunit;
 
@@ -191,17 +192,20 @@ public class DocumentOptionsTests
     [Fact]
     public void Metadata_CanBeSet()
     {
-        var metadata = new Dictionary<string, object>
+        var author = new XdmQName(NamespaceId.DcTerms, "creator");
+        var version = new XdmQName(NamespaceId.PhoenixmlMeta, "version");
+
+        var metadata = new Dictionary<XdmQName, XdmValue>
         {
-            { "author", "John" },
-            { "version", 1 }
+            { author, XdmValue.From("John") },
+            { version, XdmValue.From(1L) }
         };
 
         var options = new DocumentOptions { Metadata = metadata };
 
         options.Metadata.Should().NotBeNull();
-        options.Metadata!["author"].Should().Be("John");
-        options.Metadata["version"].Should().Be(1);
+        options.Metadata![author].Should().Be(XdmValue.From("John"));
+        options.Metadata[version].Should().Be(XdmValue.From(1L));
     }
 
     [Theory]

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using PhoenixmlDb.Core.Metadata;
+using PhoenixmlDb.Xdm;
 
 namespace PhoenixmlDb.Core;
 
@@ -220,11 +222,16 @@ public interface IWriteTransaction : IReadTransaction
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Sets a metadata key-value pair on a document within this transaction.
+    /// Sets a metadata value in the container's default namespace, within this transaction.
     /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/>,
+    /// which opens and commits its own write transaction, this joins the caller's transaction —
+    /// the write is not visible until <see cref="CommitAsync"/>.
+    /// </remarks>
     /// <param name="container">The container holding the document.</param>
     /// <param name="documentName">The name of the document to attach metadata to.</param>
-    /// <param name="key">The metadata key (case-sensitive). Replaces any existing value for this key.</param>
+    /// <param name="name">The local metadata name, resolved against the container's default namespace.</param>
     /// <param name="value">The metadata value.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="DocumentNotFoundException">
@@ -233,8 +240,48 @@ public interface IWriteTransaction : IReadTransaction
     ValueTask SetMetadataAsync(
         ContainerId container,
         string documentName,
-        string key,
-        object value,
+        string name,
+        string value,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a typed metadata value within this transaction. The namespace and value type
+    /// come from the property.
+    /// </summary>
+    /// <remarks>Joins the caller's transaction; not visible until <see cref="CommitAsync"/>.</remarks>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="container">The container holding the document.</param>
+    /// <param name="documentName">The name of the document to attach metadata to.</param>
+    /// <param name="descriptor">The metadata property descriptor.</param>
+    /// <param name="value">The metadata value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="DocumentNotFoundException">
+    /// No document with the specified name exists in the container.
+    /// </exception>
+    ValueTask SetMetadataAsync<T>(
+        ContainerId container,
+        string documentName,
+        MetadataProperty<T> descriptor,
+        T value,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a metadata value by explicit qualified name, within this transaction.
+    /// </summary>
+    /// <remarks>Joins the caller's transaction; not visible until <see cref="CommitAsync"/>.</remarks>
+    /// <param name="container">The container holding the document.</param>
+    /// <param name="documentName">The name of the document to attach metadata to.</param>
+    /// <param name="name">The fully qualified metadata name.</param>
+    /// <param name="value">The metadata value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="DocumentNotFoundException">
+    /// No document with the specified name exists in the container.
+    /// </exception>
+    ValueTask SetMetadataAsync(
+        ContainerId container,
+        string documentName,
+        XdmQName name,
+        XdmValue value,
         CancellationToken cancellationToken = default);
 
     /// <summary>

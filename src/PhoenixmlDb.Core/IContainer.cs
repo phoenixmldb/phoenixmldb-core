@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using PhoenixmlDb.Core.Metadata;
+using PhoenixmlDb.Xdm;
 
 namespace PhoenixmlDb.Core;
 
@@ -147,10 +149,10 @@ public interface IContainer
     ///     {
     ///         ContentType = ContentType.Json,
     ///         Overwrite = false,
-    ///         Metadata = new Dictionary&lt;string, object&gt;
+    ///         Metadata = new Dictionary&lt;XdmQName, XdmValue&gt;
     ///         {
-    ///             ["source"] = "web",
-    ///             ["priority"] = 1
+    ///             [new XdmQName(NamespaceId.PhoenixmlMeta, "source")] = XdmValue.From("web"),
+    ///             [new XdmQName(NamespaceId.PhoenixmlMeta, "priority")] = XdmValue.From(1L)
     ///         }
     ///     });
     /// </code>
@@ -447,145 +449,137 @@ public interface IContainer
         => QueryAsync(query, variables, cancellationToken);
 
     /// <summary>
-    /// Sets a single metadata key-value pair on a document.
+    /// Sets a metadata value in the container's default namespace.
     /// </summary>
-    /// <param name="documentName">The name of the document to attach metadata to.</param>
-    /// <param name="key">
-    /// The metadata key. Keys are case-sensitive strings. If the key already exists,
-    /// its value is replaced.
-    /// </param>
-    /// <param name="value">
-    /// The metadata value. Supported types include strings, numbers, booleans, and dates.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// <para>
-    /// Metadata is a set of key-value pairs attached to a document, separate from the
-    /// document's content. Use metadata for classification, tagging, workflow state, or
-    /// any application-level attributes that you want to query without parsing document content.
+    /// This overload <b>opens and commits its own write transaction</b>. To make a metadata
+    /// write part of a larger atomic unit, use
+    /// <see cref="IWriteTransaction.SetMetadataAsync{T}(ContainerId, string, MetadataProperty{T}, T, CancellationToken)"/>.
     /// </para>
     /// <para>
-    /// Metadata can also be set at document creation time via
-    /// <see cref="DocumentOptions.Metadata"/>. Use this method to add or update metadata
-    /// after the document has been stored.
+    /// <paramref name="name"/> is a local name, resolved against the container's
+    /// <see cref="ContainerOptions.DefaultMetadataNamespace"/>. Two applications sharing a
+    /// database can therefore both use a common name such as <c>status</c> without colliding.
     /// </para>
     /// <para>
-    /// To make metadata queryable with <see cref="QueryMetadataAsync"/>, add a metadata
+    /// To make metadata queryable with <see cref="QueryMetadataAsync{T}"/>, add a metadata
     /// index to the container's <see cref="IndexConfiguration"/> via
     /// <see cref="IndexConfiguration.AddMetadataIndex"/>.
     /// </para>
     /// </remarks>
+    /// <param name="documentName">The document to annotate.</param>
+    /// <param name="name">The local metadata name, resolved against the container's default namespace.</param>
+    /// <param name="value">The value to store.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="DocumentNotFoundException">No such document in this container.</exception>
     /// <example>
     /// <code>
     /// await container.SetMetadataAsync("reports/q1.xml", "status", "approved");
-    /// await container.SetMetadataAsync("reports/q1.xml", "reviewer", "Jane Smith");
-    /// await container.SetMetadataAsync("reports/q1.xml", "reviewDate", DateTimeOffset.UtcNow);
     /// </code>
     /// </example>
     ValueTask SetMetadataAsync(
-        string documentName,
-        string key,
-        object value,
-        CancellationToken cancellationToken = default);
+        string documentName, string name, string value, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets a single metadata value for a document by key.
-    /// </summary>
-    /// <param name="documentName">The name of the document.</param>
-    /// <param name="key">The metadata key to retrieve (case-sensitive).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// The metadata value if the key exists, or <c>null</c> if the key is not set on
-    /// this document.
-    /// </returns>
-    /// <remarks>
-    /// To retrieve all metadata for a document at once, use
-    /// <see cref="GetAllMetadataAsync"/> instead. Metadata can also be read through the
-    /// <see cref="IDocument"/> interface via <see cref="IDocument.GetMetadataAsync"/>.
-    /// </remarks>
+    /// <summary>Reads a metadata value from the container's default namespace.</summary>
+    /// <param name="documentName">The document to read from.</param>
+    /// <param name="name">The local metadata name, resolved against the container's default namespace.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The value, or null if the document has no such metadata.</returns>
+    ValueTask<string?> GetMetadataAsync(
+        string documentName, string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a typed metadata value. The namespace and value type come from the property.</summary>
+    /// <remarks>Opens and commits its own write transaction; see the string overload.</remarks>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="documentName">The document to annotate.</param>
+    /// <param name="descriptor">The metadata property descriptor.</param>
+    /// <param name="value">The value to store.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="DocumentNotFoundException">No such document in this container.</exception>
     /// <example>
     /// <code>
-    /// var status = await container.GetMetadataAsync("reports/q1.xml", "status");
-    /// if (status is string s)
-    ///     Console.WriteLine($"Report status: {s}");
+    /// await container.SetMetadataAsync("reports/q1.xml", DcTerms.Creator, "Jane Smith");
     /// </code>
     /// </example>
-    ValueTask<object?> GetMetadataAsync(
-        string documentName,
-        string key,
-        CancellationToken cancellationToken = default);
+    ValueTask SetMetadataAsync<T>(
+        string documentName, MetadataProperty<T> descriptor, T value, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets all metadata key-value pairs for a document.
-    /// </summary>
-    /// <param name="documentName">The name of the document.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// A read-only dictionary containing all metadata entries for the document. Returns an
-    /// empty dictionary if the document has no metadata.
-    /// </returns>
-    /// <remarks>
-    /// This is useful when you need to inspect or display all metadata at once, for example
-    /// in an admin UI or document detail view. For retrieving a single known key,
-    /// <see cref="GetMetadataAsync"/> is more direct.
-    /// </remarks>
+    /// <summary>Reads a typed metadata value.</summary>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="documentName">The document to read from.</param>
+    /// <param name="descriptor">The metadata property descriptor.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The value, or default if the document has no such metadata.</returns>
+    ValueTask<T?> GetMetadataAsync<T>(
+        string documentName, MetadataProperty<T> descriptor, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a metadata value by explicit qualified name.</summary>
+    /// <remarks>Opens and commits its own write transaction; see the string overload.</remarks>
+    /// <param name="documentName">The document to annotate.</param>
+    /// <param name="name">The fully qualified metadata name.</param>
+    /// <param name="value">The value to store.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="DocumentNotFoundException">No such document in this container.</exception>
+    ValueTask SetMetadataAsync(
+        string documentName, XdmQName name, XdmValue value, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads a metadata value by explicit qualified name.</summary>
+    /// <param name="documentName">The document to read from.</param>
+    /// <param name="name">The fully qualified metadata name.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The value, or null if the document has no such metadata.</returns>
+    ValueTask<XdmValue?> GetMetadataAsync(
+        string documentName, XdmQName name, CancellationToken cancellationToken = default);
+
+    /// <summary>All metadata for a document, keyed by qualified name.</summary>
+    /// <param name="documentName">The document to read from.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The document's metadata; empty if it has none.</returns>
     /// <example>
     /// <code>
-    /// var allMeta = await container.GetAllMetadataAsync("reports/q1.xml");
-    /// foreach (var (key, value) in allMeta)
-    /// {
-    ///     Console.WriteLine($"  {key} = {value}");
-    /// }
+    /// var all = await container.GetAllMetadataAsync("reports/q1.xml");
+    /// var creator = all.Get(DcTerms.Creator);
     /// </code>
     /// </example>
-    ValueTask<IReadOnlyDictionary<string, object>> GetAllMetadataAsync(
-        string documentName,
-        CancellationToken cancellationToken = default);
+    ValueTask<MetadataCollection> GetAllMetadataAsync(
+        string documentName, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Finds documents that have a specific metadata key-value pair.
-    /// </summary>
-    /// <param name="key">The metadata key to match on.</param>
-    /// <param name="value">The metadata value to match. Equality comparison is used.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// An <see cref="IAsyncEnumerable{T}"/> of <see cref="DocumentInfo"/> records for all
-    /// documents whose metadata contains the specified key with a matching value.
-    /// </returns>
+    /// <summary>All metadata for a document within one namespace.</summary>
+    /// <remarks>Served by a cursor range over the namespace key prefix, not by filtering.</remarks>
+    /// <param name="documentName">The document to read from.</param>
+    /// <param name="namespaceId">The namespace to restrict to.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The matching metadata; empty if the document has none in that namespace.</returns>
+    ValueTask<MetadataCollection> GetMetadataByNamespaceAsync(
+        string documentName, NamespaceId namespaceId, CancellationToken cancellationToken = default);
+
+    /// <summary>Streams documents whose metadata property equals a value.</summary>
     /// <remarks>
-    /// <para>
-    /// This method is most efficient when a metadata index has been configured for the
-    /// given <paramref name="key"/> via <see cref="IndexConfiguration.AddMetadataIndex"/>.
-    /// Without an index, the query requires scanning all documents' metadata.
-    /// </para>
-    /// <para>
-    /// Common use cases include finding documents by status, author, category, or any
-    /// other application-defined classification.
-    /// </para>
+    /// Most efficient when a metadata index is configured for the property via
+    /// <see cref="IndexConfiguration.AddMetadataIndex"/>. Without one the query scans the
+    /// container's documents; both paths use the same value encoding and return the same
+    /// documents.
     /// </remarks>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="descriptor">The metadata property to match on.</param>
+    /// <param name="value">The value to match.</param>
+    /// <param name="cancellationToken">Cancels the enumeration.</param>
     /// <example>
     /// <code>
-    /// // Find all approved reports (assumes a metadata index on "status")
-    /// await foreach (var info in container.QueryMetadataAsync("status", "approved"))
-    /// {
+    /// await foreach (var info in container.QueryMetadataAsync(Routing.Status, "approved"))
     ///     Console.WriteLine($"Approved: {info.Name}");
-    /// }
     /// </code>
     /// </example>
-    IAsyncEnumerable<DocumentInfo> QueryMetadataAsync(
-        string key,
-        object value,
-        CancellationToken cancellationToken = default);
+    IAsyncEnumerable<DocumentInfo> QueryMetadataAsync<T>(
+        MetadataProperty<T> descriptor, T value, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Stores <paramref name="values"/> as multi-valued metadata <paramref name="metadataName"/>
-    /// for <paramref name="documentName"/> and indexes each value (replacing prior values for that
-    /// name). Use for index-backed multi-value metadata such as tags. Defaults to a no-op so
-    /// implementations without indexing stay source-compatible.
-    /// </summary>
-    ValueTask SetIndexedValuesAsync(string documentName, string metadataName,
-        IReadOnlyCollection<string> values, CancellationToken cancellationToken = default)
-        => ValueTask.CompletedTask;
+    /// <summary>Streams documents whose metadata equals a value, by explicit qualified name.</summary>
+    /// <param name="name">The fully qualified metadata name to match on.</param>
+    /// <param name="value">The value to match.</param>
+    /// <param name="cancellationToken">Cancels the enumeration.</param>
+    IAsyncEnumerable<DocumentInfo> QueryMetadataAsync(
+        XdmQName name, XdmValue value, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Writes multiple documents. Engine implementations batch them into a single write
@@ -672,6 +666,16 @@ public sealed class ContainerOptions
     /// </para>
     /// </remarks>
     public IndexConfiguration Indexes { get; } = new();
+
+    /// <summary>
+    /// The namespace URI that unqualified metadata names resolve to in this container.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>https://schemas.phoenixml.dev/2026/meta</c>. Set this to your own
+    /// application namespace so two applications sharing a database cannot collide on a
+    /// common name such as <c>status</c>.
+    /// </remarks>
+    public string? DefaultMetadataNamespace { get; init; }
 
     /// <summary>
     /// Gets the default namespace prefix-to-URI bindings for this container.
@@ -793,7 +797,7 @@ public enum ValidationMode
 /// <item>
 /// <description>
 /// <b>Initial metadata:</b> Set <see cref="Metadata"/> to attach key-value pairs at creation
-/// time, rather than making a separate <see cref="IContainer.SetMetadataAsync"/> call.
+/// time, rather than making a separate <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/> call.
 /// </description>
 /// </item>
 /// </list>
@@ -838,15 +842,15 @@ public record DocumentOptions
     /// Setting metadata at creation time is atomic with the document insert — either both
     /// the document and its metadata are stored, or neither is. This is more efficient and
     /// safer than storing the document first and then calling
-    /// <see cref="IContainer.SetMetadataAsync"/> separately.
+    /// <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/> separately.
     /// </para>
     /// <para>
     /// Additional metadata can be added or updated later via
-    /// <see cref="IContainer.SetMetadataAsync"/>. Metadata set here does not prevent
+    /// <see cref="IContainer.SetMetadataAsync(string, string, string, CancellationToken)"/>. Metadata set here does not prevent
     /// later modifications.
     /// </para>
     /// </remarks>
-    public IReadOnlyDictionary<string, object>? Metadata { get; init; }
+    public IReadOnlyDictionary<XdmQName, XdmValue>? Metadata { get; init; }
 
     /// <summary>
     /// Gets whether to overwrite an existing document with the same name.
