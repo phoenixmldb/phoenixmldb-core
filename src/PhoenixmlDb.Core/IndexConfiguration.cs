@@ -1,3 +1,4 @@
+using PhoenixmlDb.Xdm;
 using System;
 using System.Collections.Generic;
 
@@ -56,9 +57,9 @@ namespace PhoenixmlDb.Core;
 ///             Stemming = true,
 ///             CaseSensitive = false
 ///         })
-///         // Query documents by metadata
-///         .AddMetadataIndex("supplier", XdmValueType.XdmString)
-///         .AddMetadataIndex("importBatch", XdmValueType.XdmInteger);
+///         // Query documents by metadata (qualified — see AddMetadataIndex)
+///         .AddMetadataIndex(new XdmQName(CatalogNs, "supplier"), XdmValueType.XdmString)
+///         .AddMetadataIndex(new XdmQName(CatalogNs, "importBatch"), XdmValueType.XdmInteger);
 /// });
 /// </code>
 /// </example>
@@ -193,7 +194,7 @@ public sealed class IndexConfiguration
     /// <summary>
     /// Adds a metadata index that enables efficient queries by document metadata key-value pairs.
     /// </summary>
-    /// <param name="metadataName">The metadata key to index (case-sensitive).</param>
+    /// <param name="metadataName">The qualified metadata name to index (case-sensitive).</param>
     /// <param name="valueType">
     /// The XDM type for indexing the metadata value. Defaults to <see cref="XdmValueType.XdmString"/>.
     /// Use a numeric type if the metadata values are numbers and you need range queries.
@@ -201,12 +202,17 @@ public sealed class IndexConfiguration
     /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// Without a metadata index, <see cref="IContainer.QueryMetadataAsync"/> must scan all
+    /// Without a metadata index, <see cref="IContainer.QueryMetadataAsync{T}"/> must scan all
     /// documents' metadata to find matches. A metadata index enables direct lookup by key and value.
+    /// </para>
+    /// <para>
+    /// The name is qualified because the metadata store keys by qualified name. An index
+    /// declared for one namespace's <c>status</c> does not answer for another's, and adding
+    /// an index never changes which documents a query returns — only how fast it finds them.
     /// </para>
     /// </remarks>
     public IndexConfiguration AddMetadataIndex(
-        string metadataName,
+        XdmQName metadataName,
         XdmValueType valueType = XdmValueType.XdmString)
     {
         _indexes.Add(new MetadataIndexDefinition
@@ -364,6 +370,13 @@ public record FullTextIndexDefinition : IndexDefinition
 /// <seealso cref="IndexConfiguration.AddMetadataIndex"/>
 public record MetadataIndexDefinition : IndexDefinition
 {
-    public required string MetadataName { get; init; }
+    /// <summary>The qualified metadata name this index covers.</summary>
+    /// <remarks>
+    /// Qualified rather than a bare local name so that two applications sharing a database
+    /// can both index a common name such as <c>status</c> without one index answering for
+    /// the other's documents. The store keys metadata by the same qualified name, which is
+    /// what lets an index-backed lookup and an unindexed scan return the same documents.
+    /// </remarks>
+    public required XdmQName MetadataName { get; init; }
     public required XdmValueType ValueType { get; init; }
 }

@@ -1,3 +1,5 @@
+using PhoenixmlDb.Core.Metadata;
+using PhoenixmlDb.Xdm;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -64,7 +66,7 @@ namespace PhoenixmlDb.Core;
 ///     Console.WriteLine($"Root element: {root.NodeName}");
 ///
 ///     // Read metadata
-///     var status = await doc.GetMetadataAsync("status");
+///     var status = await doc.GetMetadataAsync(Routing.Status.QName);
 ///     Console.WriteLine($"Document {doc.Name}, status={status}, size={doc.SizeBytes} bytes");
 /// }
 /// </code>
@@ -188,16 +190,16 @@ public interface IDocument
     ValueTask<IXdmNode> GetRootNodeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets a single metadata value by key.
+    /// Gets a single metadata value by qualified name.
     /// </summary>
-    /// <param name="key">The metadata key to retrieve (case-sensitive).</param>
+    /// <param name="name">The qualified metadata name to retrieve (case-sensitive).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The metadata value if the key exists, or <c>null</c> if the key is not set.</returns>
+    /// <returns>The metadata value if the name exists, or <c>null</c> if it is not set.</returns>
     /// <remarks>
     /// Metadata is separate from document content — it consists of application-defined
     /// key-value pairs. To retrieve all metadata at once, use <see cref="IContainer.GetAllMetadataAsync(string, CancellationToken)"/>.
     /// </remarks>
-    ValueTask<object?> GetMetadataAsync(string key, CancellationToken cancellationToken = default);
+    ValueTask<XdmValue?> GetMetadataAsync(XdmQName name, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets all metadata key-value pairs for this document.
@@ -211,7 +213,7 @@ public interface IDocument
     /// Use this when you need to inspect or display all metadata at once. For a single
     /// known key, <see cref="IContainer.GetMetadataAsync(string, string, CancellationToken)"/> is more direct.
     /// </remarks>
-    ValueTask<IReadOnlyDictionary<string, object>> GetAllMetadataAsync(
+    ValueTask<MetadataCollection> GetAllMetadataAsync(
         CancellationToken cancellationToken = default);
 }
 
