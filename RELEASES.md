@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+## 1.6.0 — 2026-08-06
+
+Range queries over document metadata, and a typed way to declare the index that serves them.
+Additive — nothing from 1.5.0 changes shape.
+
+### `QueryMetadataRangeAsync`
+
+Metadata could be queried for equality but not for order, which left the obvious questions —
+everything received since a cutoff, everything with a retry count above a threshold — unable to
+use an index even when one existed.
+
+```csharp
+// everything received on or after the cutoff
+await foreach (var d in container.QueryMetadataRangeAsync(Received, lowerBound: cutoff, upperBound: null))
+    Console.WriteLine(d.Name);
+```
+
+Either bound may be null for an open-ended range; both null matches every document carrying the
+property at all. Ordering follows the property's XDM type rather than its .NET string form, so
+dates order chronologically and numbers numerically.
+
+As with equality, a declared index changes how the range is found and never what it finds. An
+unindexed container answers the same query by scanning, comparing the same order-preserving
+encoding the index walks.
+
+**Two overloads, for a reason worth stating.** The typed overload constrains `T : struct`:
+
+```csharp
+IAsyncEnumerable<DocumentInfo> QueryMetadataRangeAsync<T>(
+    MetadataProperty<T> descriptor, T? lowerBound, T? upperBound, ...) where T : struct;
+```
+
+On an unconstrained `T`, `T?` is a nullability annotation rather than `Nullable<T>`, so a
+value-typed property could not express an open-ended range at all — `null` would not compile.
+Using `default(T)` for "no bound" was the alternative, and it is a lie the caller cannot detect:
+an unbounded range would be indistinguishable from one bounded at `DateTimeOffset.MinValue` or
+`0`. The second overload takes an `XdmQName` with `XdmValue?` bounds and covers everything the
+first cannot, including `MetadataProperty<string>`.
+
+### `AddMetadataIndex<T>`
+
+```csharp
+opts.Indexes.AddMetadataIndex(Received, XdmValueType.DateTime);
+```
+
+Takes the qualified name from the property rather than restating it, so an index cannot drift
+from the values it is meant to cover. The `XdmQName` overload remains for names with no
+declared property.
+
 ## 1.5.0 — 2026-08-05
 
 Metadata becomes namespace-qualified end to end. **Breaking**: the metadata surfaces on
