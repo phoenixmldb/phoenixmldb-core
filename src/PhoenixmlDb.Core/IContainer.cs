@@ -582,6 +582,71 @@ public interface IContainer
         XdmQName name, XdmValue value, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Streams documents whose metadata property falls within a range of values.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Either bound may be null for an open-ended range: <c>from: cutoff, to: null</c> reads
+    /// "at or after cutoff". Both null matches every document that carries the property at all.
+    /// </para>
+    /// <para>
+    /// A metadata index declared for this property with a matching value type serves the range
+    /// directly; otherwise the container is scanned. As with equality, both paths return the
+    /// same documents — the index changes how the answer is found, not what it is.
+    /// </para>
+    /// <para>
+    /// Ordering follows the property's XDM type, not its .NET string form: dates order
+    /// chronologically and numbers numerically.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="descriptor">The metadata property to range over.</param>
+    /// <param name="lowerBound">Lower bound, or null for unbounded below.</param>
+    /// <param name="upperBound">Upper bound, or null for unbounded above.</param>
+    /// <param name="lowerInclusive">Whether <paramref name="lowerBound"/> itself matches. Defaults to true.</param>
+    /// <param name="upperInclusive">Whether <paramref name="upperBound"/> itself matches. Defaults to true.</param>
+    /// <param name="cancellationToken">Cancels the enumeration.</param>
+    /// <example>
+    /// <code>
+    /// // everything received on or after the cutoff
+    /// await foreach (var d in container.QueryMetadataRangeAsync(Received, lowerBound: cutoff, upperBound: null))
+    ///     Console.WriteLine(d.Name);
+    /// </code>
+    /// </example>
+    IAsyncEnumerable<DocumentInfo> QueryMetadataRangeAsync<T>(
+        MetadataProperty<T> descriptor,
+        T? lowerBound,
+        T? upperBound,
+        bool lowerInclusive = true,
+        bool upperInclusive = true,
+        CancellationToken cancellationToken = default)
+        where T : struct;
+
+    /// <summary>
+    /// Streams documents whose metadata falls within a range, by explicit qualified name.
+    /// </summary>
+    /// <remarks>
+    /// The general form. Use it for reference-typed properties such as
+    /// <c>MetadataProperty&lt;string&gt;</c>, which the typed overload cannot express: an
+    /// unconstrained <c>T?</c> cannot represent "no bound" for a value type, and using
+    /// <c>default(T)</c> for it would make an unbounded range indistinguishable from one
+    /// bounded at <c>DateTimeOffset.MinValue</c> or <c>0</c>.
+    /// </remarks>
+    /// <param name="name">The fully qualified metadata name to range over.</param>
+    /// <param name="lowerBound">Lower bound, or null for unbounded below.</param>
+    /// <param name="upperBound">Upper bound, or null for unbounded above.</param>
+    /// <param name="lowerInclusive">Whether <paramref name="lowerBound"/> itself matches.</param>
+    /// <param name="upperInclusive">Whether <paramref name="upperBound"/> itself matches.</param>
+    /// <param name="cancellationToken">Cancels the enumeration.</param>
+    IAsyncEnumerable<DocumentInfo> QueryMetadataRangeAsync(
+        XdmQName name,
+        XdmValue? lowerBound,
+        XdmValue? upperBound,
+        bool lowerInclusive = true,
+        bool upperInclusive = true,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Writes multiple documents. Engine implementations batch them into a single write
     /// transaction (one commit) for bulk-load throughput; this default falls back to
     /// sequential single-document writes so other implementations keep working.

@@ -1,3 +1,4 @@
+using PhoenixmlDb.Core.Metadata;
 using PhoenixmlDb.Xdm;
 using System;
 using System.Collections.Generic;
@@ -192,6 +193,26 @@ public sealed class IndexConfiguration
     }
 
     /// <summary>
+    /// Adds a metadata index described by a typed property.
+    /// </summary>
+    /// <remarks>
+    /// Preferred over the <see cref="XdmQName"/> overload where a
+    /// <see cref="MetadataProperty{T}"/> already exists: the property is the single place the
+    /// name and its type are declared, so the index cannot drift from the values it covers.
+    /// </remarks>
+    /// <typeparam name="T">The property's CLR value type.</typeparam>
+    /// <param name="descriptor">The metadata property to index.</param>
+    /// <param name="valueType">The XDM type to index values under.</param>
+    /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
+    public IndexConfiguration AddMetadataIndex<T>(
+        MetadataProperty<T> descriptor,
+        XdmValueType valueType = XdmValueType.XdmString)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        return AddMetadataIndex(descriptor.QName, valueType);
+    }
+
+    /// <summary>
     /// Adds a metadata index that enables efficient queries by document metadata key-value pairs.
     /// </summary>
     /// <param name="metadataName">The qualified metadata name to index (case-sensitive).</param>
@@ -211,6 +232,7 @@ public sealed class IndexConfiguration
     /// an index never changes which documents a query returns — only how fast it finds them.
     /// </para>
     /// </remarks>
+
     public IndexConfiguration AddMetadataIndex(
         XdmQName metadataName,
         XdmValueType valueType = XdmValueType.XdmString)
