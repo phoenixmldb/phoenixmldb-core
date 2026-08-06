@@ -1,3 +1,4 @@
+using PhoenixmlDb.Xdm;
 using FluentAssertions;
 using Xunit;
 
@@ -6,8 +7,16 @@ namespace PhoenixmlDb.Core.Tests;
 /// <summary>
 /// Tests for IndexConfiguration fluent builder.
 /// </summary>
+/// <summary>Qualifies a local name into an application-owned namespace for these tests.</summary>
+internal static class MetadataNames
+{
+    public static XdmQName Q(string localName) =>
+        new(new NamespaceId(NamespaceId.FirstUserNamespaceId), localName);
+}
+
 public class IndexConfigurationTests
 {
+
     [Fact]
     public void Constructor_CreatesEmptyConfiguration()
     {
@@ -205,7 +214,7 @@ public class IndexConfigurationTests
     {
         var config = new IndexConfiguration();
 
-        var result = config.AddMetadataIndex("author");
+        var result = config.AddMetadataIndex(MetadataNames.Q("author"));
 
         result.Should().BeSameAs(config);
         var indexes = config.Indexes;
@@ -215,7 +224,7 @@ public class IndexConfigurationTests
         {
             var metaIndex = indexes[0] as MetadataIndexDefinition;
             metaIndex.Should().NotBeNull();
-            metaIndex!.MetadataName.Should().Be("author");
+            metaIndex!.MetadataName.Should().Be(MetadataNames.Q("author"));
             metaIndex.ValueType.Should().Be(XdmValueType.XdmString);
         }
     }
@@ -225,12 +234,12 @@ public class IndexConfigurationTests
     {
         var config = new IndexConfiguration();
 
-        var result = config.AddMetadataIndex("score", XdmValueType.XdmInteger);
+        var result = config.AddMetadataIndex(MetadataNames.Q("score"), XdmValueType.XdmInteger);
 
         result.Should().BeSameAs(config);
         var metaIndex = config.Indexes[0] as MetadataIndexDefinition;
         metaIndex.Should().NotBeNull();
-        metaIndex!.MetadataName.Should().Be("score");
+        metaIndex!.MetadataName.Should().Be(MetadataNames.Q("score"));
         metaIndex.ValueType.Should().Be(XdmValueType.XdmInteger);
     }
 
@@ -243,10 +252,10 @@ public class IndexConfigurationTests
     {
         var config = new IndexConfiguration();
 
-        config.AddMetadataIndex(metadataName);
+        config.AddMetadataIndex(MetadataNames.Q(metadataName));
 
         var metaIndex = config.Indexes[0] as MetadataIndexDefinition;
-        metaIndex!.MetadataName.Should().Be(metadataName);
+        metaIndex!.MetadataName.Should().Be(MetadataNames.Q(metadataName));
     }
 
     [Fact]
@@ -291,7 +300,7 @@ public class IndexConfigurationTests
             .AddPathIndex("/root/element")
             .AddValueIndex("/root/price", XdmValueType.XdmDecimal)
             .AddFullTextIndex("//text")
-            .AddMetadataIndex("author")
+            .AddMetadataIndex(MetadataNames.Q("author"))
             .EnableStructuralIndex();
 
         config.Indexes.Should().HaveCount(5);
@@ -318,7 +327,7 @@ public class IndexConfigurationTests
             .AddPathIndex("/root")
             .AddValueIndex("/price", XdmValueType.XdmDecimal)
             .AddFullTextIndex()
-            .AddMetadataIndex("tag");
+            .AddMetadataIndex(MetadataNames.Q("tag"));
 
         var indexes = config.Indexes;
         indexes.Should().HaveCount(5);
@@ -508,7 +517,7 @@ public class IndexDefinitionTests
     {
         var index = new MetadataIndexDefinition
         {
-            MetadataName = "author",
+            MetadataName = MetadataNames.Q("author"),
             ValueType = XdmValueType.XdmString
         };
         index.Should().BeAssignableTo<IndexDefinition>();
@@ -566,12 +575,12 @@ public class IndexDefinitionTests
     {
         var index1 = new MetadataIndexDefinition
         {
-            MetadataName = "author",
+            MetadataName = MetadataNames.Q("author"),
             ValueType = XdmValueType.XdmString
         };
         var index2 = new MetadataIndexDefinition
         {
-            MetadataName = "author",
+            MetadataName = MetadataNames.Q("author"),
             ValueType = XdmValueType.XdmString
         };
 
