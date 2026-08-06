@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+## 1.5.0 — 2026-08-05
+
+Metadata becomes namespace-qualified end to end. **Breaking**: the metadata surfaces on
+`IContainer`, `IWriteTransaction` and `IDocument` change shape, as does `AddMetadataIndex` and the
+persisted index-config format.
+
+### Why this is breaking rather than additive
+
+The old surface keyed metadata by a bare string and valued it as `object`. Two applications sharing
+a database could not both use a name as ordinary as `status`, and — more seriously — the engine had
+no single answer for what a metadata value *was*. A stored value was JSON; an indexed value was
+typed XDM. Those are different comparisons, so adding an index could change which documents a query
+returned, not merely how quickly it found them. That is not a defect an additive API can fix: the
+two encodings had to stop existing, which means the surface that produced them had to go.
+
+### The three-tier surface
+
+Metadata names are now `XdmQName` and values `XdmValue`, exposed at three levels of explicitness:
+
+```csharp
+// local name, resolved against the container's default namespace
+await container.SetMetadataAsync("invoice.xml", "status", "pending");
+
+// typed descriptor — namespace and CLR type come from the property
+await container.SetMetadataAsync("invoice.xml", DcTerms.Creator, "lucas");
+
+// fully explicit
+await container.SetMetadataAsync("invoice.xml", qname, XdmValue.From("application/xml"));
+```
+
+`ContainerOptions.DefaultMetadataNamespace` sets what unqualified names resolve to, defaulting to
+`https://schemas.phoenixml.dev/2026/meta`. Set it to your own application namespace and a common
+name such as `status` can no longer collide with another application's.
+
+`GetAllMetadataAsync` returns a `MetadataCollection` rather than
+`IReadOnlyDictionary<string, object>`, so a caller can finally separate a namespace from a local
+name — the old shape handed back `"ns:name"` as one unsplittable string. `GetMetadataByNamespaceAsync`
+is new, and is served by a cursor range over the namespace key prefix rather than by fetching all of
+a document's metadata and filtering it.
+
+`DocumentOptions.Metadata` is now `IReadOnlyDictionary<XdmQName, XdmValue>?`.
+
+### Indexes are qualified too
+
+`AddMetadataIndex` takes an `XdmQName`. An index that cannot say *which* `status` it covers is the
+same collision in a different place, and — because the store keys by qualified name — a bare-named
+index would answer for documents it does not describe. With one key model on both sides, declaring
+an index is a pure performance decision.
+
+The persisted index configuration records the namespace alongside the local name. A configuration
+written by an earlier version is rejected with an explanatory error rather than reinterpreted:
+defaulting the namespace would silently point an index at a different key than the store writes.
+
+### Removed
+
+`IContainer.SetIndexedValuesAsync` is deleted rather than ported. Its default interface
+implementation returned a completed task for any implementation without indexing, so a caller could
+not distinguish a successful write from a no-op; it also stored its values as a single JSON array
+while indexing each element separately. Multi-valued metadata returns as a deliberate feature or
+not at all.
+
+### Notes
+
+Two parameter names could not be used as intended: CA1716 rejects `property` and `namespace` on
+virtual and interface members because they collide with reserved keywords in other .NET languages.
+They are `descriptor` and `namespaceId`. Positional call sites are unaffected.
+
 ## 1.4.0 — 2026-08-04
 
 Foundation for typed document metadata: a single conversion boundary between CLR values and XDM, a

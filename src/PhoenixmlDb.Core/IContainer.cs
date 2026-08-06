@@ -675,7 +675,7 @@ public sealed class ContainerOptions
     /// application namespace so two applications sharing a database cannot collide on a
     /// common name such as <c>status</c>.
     /// </remarks>
-    public string? DefaultMetadataNamespace { get; init; }
+    public string? DefaultMetadataNamespace { get; set; }
 
     /// <summary>
     /// Gets the default namespace prefix-to-URI bindings for this container.
