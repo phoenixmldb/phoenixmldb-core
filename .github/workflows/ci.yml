@@ -48,6 +48,11 @@ jobs:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: dotnet build src/PhoenixmlDb.Core -c Release --no-restore -p:Version="$BUILD_VERSION"
 
+      - name: Test
+        run: |
+          dotnet test tests/PhoenixmlDb.Core.Tests -c Release
+          dotnet test tests/PhoenixmlDb.Xdm.Tests -c Release
+
       - name: Extract release notes for this version
         id: notes
         if: startsWith(github.ref, 'refs/tags/v')
