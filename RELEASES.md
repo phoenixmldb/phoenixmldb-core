@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.6.5 — 2026-08-21
+
+No code changes. Version alignment only.
+
+From this release the engine libraries and the CLI tools that ship on top of them —
+`PhoenixmlDb.Core`, `PhoenixmlDb.XQuery`, `PhoenixmlDb.Xslt`, the `xslt` tool and
+`phxspec` — carry a single version, so a developer can tell at a glance that a set of
+packages belongs together. The versions had drifted to 1.6.0 / 1.6.2 / 1.6.4 / 1.4.10
+across the family, and a matching number is easier to reason about than a compatibility
+matrix.
+
+The trade is visible right here: this package is republished unchanged to keep the
+number aligned. That is deliberate, and it is the accepted cost of the guarantee.
+
 ## 1.6.0 — 2026-08-06
 
 Range queries over document metadata, and a typed way to declare the index that serves them.
