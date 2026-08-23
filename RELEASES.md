@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- **The reserved metadata namespace's conventional prefix is now `dbxml`, was `phxm`.** Prefix
+  only — the URI is unchanged at `https://schemas.phoenixml.dev/2026/meta`, so the namespace's
+  identity, every stored key and every `NamespaceId` are untouched. Metadata keys encode the
+  numeric namespace id rather than the URI, so nothing on disk moves.
+
+  Visible in `MetadataProperty.ToString()`, which now renders `dbxml:status` where it rendered
+  `phxm:status`, and anywhere a caller declares the prefix in an XQuery prolog. `dbxml` is the
+  prefix this project used before the namespace rework, and it reads as what it is.
+
 ## 1.6.6 — 2026-08-23
 
 No library changes. Version alignment only, under the policy stated in 1.6.5 below.

@@ -255,7 +255,7 @@ public readonly record struct NamespaceId(uint Value) : IComparable<NamespaceId>
     /// <summary>
     /// The PhoenixmlDb reserved document-metadata namespace
     /// (<c>https://schemas.phoenixml.dev/2026/meta</c>). Engine-set metadata such as
-    /// content type and size. Conventionally bound to the <c>phxm</c> prefix.
+    /// content type and size. Conventionally bound to the <c>dbxml</c> prefix.
     /// </summary>
     public static NamespaceId PhoenixmlMeta => new(11);
 

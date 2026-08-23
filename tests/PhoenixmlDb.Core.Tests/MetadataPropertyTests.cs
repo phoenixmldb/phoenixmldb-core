@@ -78,7 +78,7 @@ public class MetadataPropertyTests
 
     [Fact]
     public void ToString_UsesConventionalPrefix()
-        => Status.ToString().Should().Be("phxm:status");
+        => Status.ToString().Should().Be("dbxml:status");
 
     // The single most load-bearing property of MetadataProperty<T>: FromXdm is a bare
     // pass-through to XdmValue.To<T> (Task 2), so a stored value of the wrong XDM type

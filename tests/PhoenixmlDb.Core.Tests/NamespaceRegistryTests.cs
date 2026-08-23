@@ -7,7 +7,7 @@ public class NamespaceRegistryTests
 {
     [Theory]
     [InlineData(9,  "https://schemas.phoenixml.dev/2026/db",   "phx")]
-    [InlineData(11, "https://schemas.phoenixml.dev/2026/meta", "phxm")]
+    [InlineData(11, "https://schemas.phoenixml.dev/2026/meta", "dbxml")]
     [InlineData(12, "http://purl.org/dc/terms/",               "dcterms")]
     [InlineData(3,  "http://www.w3.org/2001/XMLSchema",        "xs")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1054:URI-like parameters should not be strings", Justification = "NamespaceRegistry works with string URIs throughout")]

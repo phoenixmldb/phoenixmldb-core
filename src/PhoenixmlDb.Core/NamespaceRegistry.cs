@@ -23,7 +23,7 @@ public static class NamespaceRegistry
         (NamespaceId.Math,         "http://www.w3.org/2005/xpath-functions/math",  "math"),
         (NamespaceId.PhoenixmlDb,  "https://schemas.phoenixml.dev/2026/db",        "phx"),
         (NamespaceId.Xslt,         "http://www.w3.org/1999/XSL/Transform",         "xsl"),
-        (NamespaceId.PhoenixmlMeta,"https://schemas.phoenixml.dev/2026/meta",      "phxm"),
+        (NamespaceId.PhoenixmlMeta,"https://schemas.phoenixml.dev/2026/meta",      "dbxml"),
         (NamespaceId.DcTerms,      "http://purl.org/dc/terms/",                    "dcterms"),
     ];
 
