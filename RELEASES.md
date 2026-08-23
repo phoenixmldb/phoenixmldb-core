@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.6.6 — 2026-08-23
+
+No library changes. Version alignment only, under the policy stated in 1.6.5 below.
+
+The release exists because `PhoenixmlDb.XQuery` and `PhoenixmlDb.Xslt` ship real fixes at
+this number, and the family carries one version so a developer can tell at a glance that a
+set of packages belongs together. This package is republished unchanged, which is the
+accepted cost of that guarantee rather than an oversight.
+
+The one change in the repo since 1.6.5 is to CI, not to the library: the pack job now runs
+the tests first. It could previously publish a package built from code whose tests had never
+been run in that job.
+
 ## 1.6.5 — 2026-08-21
 
 No code changes. Version alignment only.
