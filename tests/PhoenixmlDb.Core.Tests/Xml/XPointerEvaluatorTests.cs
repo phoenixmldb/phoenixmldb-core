@@ -124,13 +124,28 @@ public sealed class XPointerEvaluatorTests
             .Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
 
+    /// <summary>
+    /// End-to-end check that <c>xpathTimeoutMs</c> reaches the evaluation and that exceeding it
+    /// surfaces as <see cref="XIncludeErrorKind.LimitExceeded"/> — i.e. a pathological xpath1()
+    /// in an XInclude cannot hang the processor.
+    ///
+    /// This asserts a WALL-CLOCK THRESHOLD, which is the weakest kind of assertion, so the
+    /// margin is deliberately enormous rather than merely sufficient. At 4000 iterations it was
+    /// ~20-40 ms against a 1 ms budget — a ~20x margin — and that was NOT enough: on 2026-08-23
+    /// the identical commit passed on the main-branch run and failed on the tag run, on net10
+    /// only, with the evaluation apparently completing inside 1 ms. That behaviour was never
+    /// explained; a 20x margin simply is not a guarantee.
+    ///
+    /// Since the cause is unexplained, the margin is not "tuned" — it is raised to ~300x, and
+    /// the ACTUAL guarantee lives in RunOnLargeStackTests, which proves the same timeout with a
+    /// blocking work item and no timing race at all. If this test ever flakes again, delete it:
+    /// the deterministic one already covers the mechanism, and this only adds the pass-through.
+    /// </summary>
     [Fact]
     public void Xpath1_over_time_budget_throws_LimitExceeded()
     {
-        // Build a moderately large doc and evaluate a deliberately expensive descendant-heavy
-        // expression under a 1 ms budget → must throw LimitExceeded (not hang, not return).
         var sb = new System.Text.StringBuilder("<r>");
-        for (int i = 0; i < 4000; i++) sb.Append("<a><b><c/></b></a>");
+        for (int i = 0; i < 40_000; i++) sb.Append("<a><b><c/></b></a>");
         sb.Append("</r>");
         var d = Doc(sb.ToString());
         var act = () => XPointerEvaluator.Evaluate(d, "xpath1(//a//b//c[.//*])", xpathTimeoutMs: 1);
