@@ -1,6 +1,6 @@
 # Release History
 
-## Unreleased
+## 1.6.7 — 2026-08-24
 
 ### Changed
 
