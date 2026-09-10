@@ -3,6 +3,7 @@ using FluentAssertions;
 using PhoenixmlDb.Core;
 using PhoenixmlDb.Xdm;
 using PhoenixmlDb.Xdm.Nodes;
+using System.Linq;
 using Xunit;
 
 namespace PhoenixmlDb.Xdm.Tests;
@@ -98,6 +99,7 @@ public class StringValueResolverTests
     [Fact]
     public void Element_WithoutResolver_StillReportsEmpty()
     {
+        using var _ = new NonStrictStringValue();
         // Documents the CURRENT behaviour, which is the ambiguity itself: no computed value and
         // no resolver is indistinguishable from an empty element. Raising here instead is
         // tracked on core#4 and changes behaviour every consumer can observe, so it is a
@@ -157,6 +159,7 @@ public class StringValueResolverTests
     [Fact]
     public void NodeReader_WithoutResolver_DeserializedElementReportsEmpty()
     {
+        using var _ = new NonStrictStringValue();
         var source = new XdmElement
         {
             Id = ElemId,
@@ -232,5 +235,100 @@ public class StringValueResolverTests
         results[0].StringValue.Should().Be("a-value");
         results[1].StringValue.Should().Be("b-value");
         calls.Should().Be(2, "once per node, not once per read");
+    }
+
+    // ---- StrictStringValue: opt-in loudness ----
+    //
+    // Default off, so no consumer of the package changes behaviour on upgrade. On, so that the
+    // suites which run it turn this class of defect from a silent wrong number into a failing
+    // test. The switch is global mutable state, so these tests serialize and always restore.
+
+    [Fact]
+    public void Strict_TogglesAndRestores()
+    {
+        // The ambient value cannot be asserted — a suite may enable strict mode globally, which
+        // is exactly what this flag is for. What must hold is that the property is honoured in
+        // both directions and restores cleanly, so tests can pin whichever mode they document.
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = false;
+            XdmNode.StrictStringValue.Should().BeFalse();
+            XdmNode.StrictStringValue = true;
+            XdmNode.StrictStringValue.Should().BeTrue();
+        }
+        finally { XdmNode.StrictStringValue = saved; }
+
+        XdmNode.StrictStringValue.Should().Be(saved);
+    }
+
+    [Fact]
+    public void Strict_On_UnresolvedElement_Throws()
+    {
+        var element = StorageBackedElement(null);
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = true;
+
+            var act = () => element.StringValue;
+
+            act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*never computed*")
+                .WithMessage("*StringValueResolver*",
+                    "the message must name the thing the caller has to supply");
+        }
+        finally { XdmNode.StrictStringValue = saved; }
+    }
+
+    [Fact]
+    public void Strict_On_ResolvedElement_DoesNotThrow()
+    {
+        var element = StorageBackedElement(_ => "42");
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = true;
+
+            element.StringValue.Should().Be("42",
+                "strict mode targets nodes with no way to know their value, not nodes that have one");
+        }
+        finally { XdmNode.StrictStringValue = saved; }
+    }
+
+    [Fact]
+    public void Strict_On_ResolverReturningEmpty_DoesNotThrow()
+    {
+        var element = StorageBackedElement(_ => "");
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = true;
+
+            element.StringValue.Should().BeEmpty(
+                "a resolver that answers 'empty' HAS determined the value; that is the very "
+                + "distinction strict mode exists to make");
+        }
+        finally { XdmNode.StrictStringValue = saved; }
+    }
+
+    [Fact]
+    public void Strict_On_ParsedElement_DoesNotThrow()
+    {
+        // A node built by the parser has its value computed up front and carries no resolver.
+        // Strict mode must not fire on it, or it would break every ordinary in-memory document.
+        var parsed = new PhoenixmlDb.Xdm.Parsing.XmlDocumentParser(
+            DocumentId.None, new NodeId(1), _ => NamespaceId.None).Parse("<a><b>text</b></a>");
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = true;
+
+            var act = () => parsed.Nodes.OfType<XdmElement>().Select(e => e.StringValue).ToList();
+
+            act.Should().NotThrow();
+            parsed.Nodes.OfType<XdmElement>().Should().Contain(e => e.StringValue == "text");
+        }
+        finally { XdmNode.StrictStringValue = saved; }
     }
 }

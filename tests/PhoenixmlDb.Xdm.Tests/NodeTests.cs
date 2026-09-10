@@ -55,6 +55,7 @@ public class XdmDocumentTests
     [Fact]
     public void XdmDocument_StringValue_ReturnsEmptyByDefault()
     {
+        using var _ = new NonStrictStringValue();
         var doc = CreateDocument();
 
         doc.StringValue.Should().BeEmpty();
@@ -63,6 +64,7 @@ public class XdmDocumentTests
     [Fact]
     public void XdmDocument_TypedValue_ReturnsUntypedAtomic()
     {
+        using var _ = new NonStrictStringValue();
         var doc = CreateDocument();
 
         doc.TypedValue.Type.Should().Be(XdmType.UntypedAtomic);
@@ -220,6 +222,7 @@ public class XdmElementTests
     [Fact]
     public void XdmElement_StringValue_ReturnsEmptyByDefault()
     {
+        using var _ = new NonStrictStringValue();
         var element = CreateElement();
 
         element.StringValue.Should().BeEmpty();
@@ -228,6 +231,7 @@ public class XdmElementTests
     [Fact]
     public void XdmElement_TypedValue_ReturnsUntypedAtomic()
     {
+        using var _ = new NonStrictStringValue();
         var element = CreateElement();
 
         element.TypedValue.Type.Should().Be(XdmType.UntypedAtomic);

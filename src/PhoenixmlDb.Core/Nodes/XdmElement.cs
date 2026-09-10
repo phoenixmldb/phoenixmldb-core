@@ -142,7 +142,7 @@ public sealed class XdmElement : XdmNode
     /// </para>
     /// </remarks>
     public override string StringValue =>
-        _stringValue ??= StringValueResolver?.Invoke(this) ?? string.Empty;
+        _stringValue ??= StringValueResolver?.Invoke(this) ?? UnresolvedStringValue(this);
 
     /// <summary>
     /// Internal backing field for the lazily-computed string value.

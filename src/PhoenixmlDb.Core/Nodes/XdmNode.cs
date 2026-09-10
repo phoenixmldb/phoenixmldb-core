@@ -1,3 +1,5 @@
+using System;
+using System.Threading;
 using PhoenixmlDb.Core;
 
 namespace PhoenixmlDb.Xdm.Nodes;
@@ -193,6 +195,62 @@ public abstract class XdmNode
     /// </para>
     /// </remarks>
     public XdmStringValueResolver? StringValueResolver { get; init; }
+
+    /// <summary>
+    /// The name of the <see cref="AppContext"/> switch backing <see cref="StrictStringValue"/>.
+    /// </summary>
+    public const string StrictStringValueSwitchName = "PhoenixmlDb.Xdm.StrictStringValue";
+
+    private static bool s_strictStringValue =
+        AppContext.TryGetSwitch(StrictStringValueSwitchName, out var enabled) && enabled;
+
+    /// <summary>
+    /// When enabled, reading <see cref="StringValue"/> on an element or document that has NEITHER
+    /// a computed value NOR a <see cref="StringValueResolver"/> throws instead of returning the
+    /// empty string. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default exists to keep behaviour unchanged for every consumer of this package. The
+    /// switch exists because that default is the defect: "not computed yet" and "genuinely empty"
+    /// are the same observable value, so a node that never had its value computed atomizes to
+    /// <c>""</c> and no caller can tell. That is how storage-backed aggregates came to return
+    /// wrong answers with no error raised (phoenixmldb/phoenixmldb-core#4).
+    /// </para>
+    /// <para>
+    /// Turn it on wherever a wrong answer is worse than a crash — engine test suites, conformance
+    /// runs, CI. A strict mode nobody enables catches nothing, so enabling it is the point rather
+    /// than an option: the suites that run it are what convert this class of defect from a silent
+    /// wrong number into a failing test.
+    /// </para>
+    /// <para>
+    /// Settable in code, or without recompiling via the AppContext switch
+    /// <c>PhoenixmlDb.Xdm.StrictStringValue</c> — in a <c>runtimeconfig.template.json</c>:
+    /// <code>{ "configProperties": { "PhoenixmlDb.Xdm.StrictStringValue": true } }</code>
+    /// The switch is read once at type initialization; the property is authoritative afterwards.
+    /// </para>
+    /// </remarks>
+    public static bool StrictStringValue
+    {
+        get => Volatile.Read(ref s_strictStringValue);
+        set => Volatile.Write(ref s_strictStringValue, value);
+    }
+
+    /// <summary>
+    /// Produces the value an element or document reports when it has no computed string value and
+    /// no resolver: the empty string, or an exception under <see cref="StrictStringValue"/>.
+    /// </summary>
+    /// <param name="node">The node being read, named in the exception message.</param>
+    private protected static string UnresolvedStringValue(XdmNode node) =>
+        StrictStringValue
+            ? throw new InvalidOperationException(
+                $"The string value of this {node.NodeKind} node was never computed and no "
+                + $"{nameof(StringValueResolver)} was supplied, so it cannot be determined. "
+                + "Returning the empty string here would be indistinguishable from a genuinely "
+                + "empty node. A node reconstructed from storage must be given a resolver — see "
+                + $"the NodeReader overload that takes one. To restore the previous "
+                + $"behaviour, set {nameof(XdmNode)}.{nameof(StrictStringValue)} to false.")
+            : string.Empty;
 
     /// <summary>
     /// The typed value of this node, as defined by the XDM <c>dm:typed-value</c> accessor.
