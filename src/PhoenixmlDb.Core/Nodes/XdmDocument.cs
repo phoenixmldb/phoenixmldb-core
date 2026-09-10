@@ -79,11 +79,20 @@ public sealed class XdmDocument : XdmNode
     /// The string value of this document, which is the concatenation of all descendant text nodes.
     /// </summary>
     /// <remarks>
-    /// Computing the string value requires a tree traversal. Until the traversal is performed
-    /// and the result cached via the internal <c>_stringValue</c> field, this returns
-    /// <see cref="string.Empty"/>.
+    /// Computing the string value requires a tree traversal. The parser performs it up front.
+    /// A node reconstructed from storage cannot — its children resolve lazily — so it carries a
+    /// <see cref="XdmNode.StringValueResolver"/>, which is invoked here on first read and cached.
+    /// <para>
+    /// With NEITHER a computed value nor a resolver this still returns <see cref="string.Empty"/>,
+    /// which is indistinguishable from a genuinely empty document. That ambiguity is the defect
+    /// behind phoenixmldb/phoenixmldb-core#4: it made a storage-backed node atomize to "" on the
+    /// implicit-atomization paths while fn:string() on the same node returned its text. Supplying
+    /// a resolver is what removes it; raising instead of returning "" is tracked separately on
+    /// that issue, because it changes behaviour every consumer can observe.
+    /// </para>
     /// </remarks>
-    public override string StringValue => _stringValue ?? string.Empty;
+    public override string StringValue =>
+        _stringValue ??= StringValueResolver?.Invoke(this) ?? string.Empty;
 
     /// <summary>
     /// Internal backing field for the lazily-computed string value.

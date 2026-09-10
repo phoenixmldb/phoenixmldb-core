@@ -152,11 +152,47 @@ public abstract class XdmNode
     /// for element and document nodes, it is the concatenation of all descendant text nodes.
     /// </para>
     /// <para>
-    /// For <see cref="XdmElement"/> and <see cref="XdmDocument"/>, the string value requires
-    /// a tree traversal and is lazily computed. Until computed, it returns <see cref="string.Empty"/>.
+    /// For <see cref="XdmElement"/> and <see cref="XdmDocument"/>, the string value requires a
+    /// tree traversal. A node built by the parser has it computed up front. A node reconstructed
+    /// from storage does not, and must carry a <see cref="StringValueResolver"/> so the traversal
+    /// can be performed on first read — see that property for why this matters.
     /// </para>
     /// </remarks>
     public abstract string StringValue { get; }
+
+    /// <summary>
+    /// Computes the string value of a node whose value was not known at construction time.
+    /// </summary>
+    /// <param name="node">The node whose descendant text is to be concatenated.</param>
+    /// <returns>The XDM string value. The empty string is a legitimate result.</returns>
+    public delegate string XdmStringValueResolver(XdmNode node);
+
+    /// <summary>
+    /// Supplies <see cref="StringValue"/> on first read for a node whose value could not be
+    /// computed when it was constructed. Required for element and document nodes reconstructed
+    /// from storage, whose children are resolved lazily and so cannot be walked at build time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This exists because "not computed yet" and "genuinely empty" used to be the same
+    /// observable value. <see cref="StringValue"/> returned <see cref="string.Empty"/> for both,
+    /// so a node read from storage atomized to <c>""</c> and no caller could tell. Paths that
+    /// walk children (<c>fn:string</c>, explicit casts) saw the text; paths that read the cached
+    /// value (implicit atomization — numeric aggregates, general comparison) saw <c>""</c>. The
+    /// same query answered differently depending on what wrapped it, with no error raised.
+    /// </para>
+    /// <para>
+    /// A resolver is a SUPPORTED way for a storage layer outside this assembly to supply that
+    /// traversal. It replaces reaching the internal backing field, which only assemblies named
+    /// in <c>InternalsVisibleTo</c> could ever do — a list that does not, and should not,
+    /// include the storage layer.
+    /// </para>
+    /// <para>
+    /// The resolved value is cached, so the resolver runs at most once per node. It must not
+    /// return <c>null</c>; a node with no descendant text resolves to the empty string.
+    /// </para>
+    /// </remarks>
+    public XdmStringValueResolver? StringValueResolver { get; init; }
 
     /// <summary>
     /// The typed value of this node, as defined by the XDM <c>dm:typed-value</c> accessor.
