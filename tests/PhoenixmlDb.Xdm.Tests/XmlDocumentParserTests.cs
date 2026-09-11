@@ -932,17 +932,23 @@ public class XmlDocumentParserTests
         // Warm up JIT so timing reflects the algorithm, not first-call overhead.
         _ = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(BuildXml(1000));
 
-        // Compare the RATIO of two sizes rather than asserting a wall-clock bound.
+        // Compare the RATIO across a 4x span rather than asserting a wall-clock bound.
         //
-        // This used to assert "50K children parse in under 2s". That is not the property under
-        // test — the property is that cost grows with N, not N^2 — and a wall-clock bound is
-        // load-dependent, so the test failed on a busy machine while the algorithm was fine. It
-        // blocked a release that way (measured at 2.27s on a box at load 19; the same build came
-        // in at 0.9s idle). A ratio cancels ambient load, because both measurements carry it.
+        // History, because this test has now been wrong twice. It first asserted "50K children
+        // parse in under 2s" — not the property under test, and load-dependent, so it failed on
+        // a busy machine while the algorithm was fine. Replacing that with a 2x ratio bounded at
+        // 3.0 then failed on CI at 3.71, because 2x gives poor separation and the measurements
+        // were tiny (69ms vs 255ms) where noise dominates.
         //
-        // Doubling N costs ~2x if linear and ~4x if quadratic. The bound is 3.0: comfortably
-        // above the linear case even with noise, comfortably below the quadratic one it exists
-        // to catch.
+        // Measured across five sizes on a loaded box, per-doubling ratios came out 2.19, 0.82,
+        // 2.01, 1.74 — averaging linear, with noise swamping any 2x comparison. Over 16x the
+        // input (12.5K -> 200K) the cost rose 6.3x. The algorithm is linear; the test was not
+        // measuring well enough to say so.
+        //
+        // So: 4x the input, where linear costs ~4x and quadratic ~16x. The bound is 8.0, which
+        // sits far above the linear case even with the noise measured here and far below the
+        // quadratic one it exists to catch. And a ratio cancels ambient load, because both
+        // measurements carry it.
         TimeSpan TimeParse(string xml)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -952,11 +958,11 @@ public class XmlDocumentParserTests
             return sw.Elapsed;
         }
 
-        var small = BuildXml(25_000);
-        var large = BuildXml(50_000);
+        var small = BuildXml(50_000);
+        var large = BuildXml(200_000);
 
-        // Best-of-three each way: a single sample can be hit by a GC pause or a scheduler
-        // preemption, and the minimum is the closest thing to the algorithm's own cost.
+        // Best-of-three each way: one sample can be hit by a GC pause or a scheduler preemption,
+        // and the minimum is the closest thing to the algorithm's own cost.
         var tSmall = TimeSpan.MaxValue;
         var tLarge = TimeSpan.MaxValue;
         for (var i = 0; i < 3; i++)
@@ -967,17 +973,17 @@ public class XmlDocumentParserTests
             if (b < tLarge) tLarge = b;
         }
 
-        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(large);
+        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(small);
         result.NodeCount.Should().BeGreaterThan(50_000u);
 
         // Guard against a degenerate denominator on a very fast machine.
-        if (tSmall < TimeSpan.FromMilliseconds(5))
+        if (tSmall < TimeSpan.FromMilliseconds(20))
             return;
 
         var ratio = tLarge.TotalMilliseconds / tSmall.TotalMilliseconds;
-        ratio.Should().BeLessThan(3.0,
-            "doubling the child count must roughly double the cost (linear), not quadruple it "
-            + $"(O(N^2)); 25K took {tSmall.TotalMilliseconds:F0}ms and 50K took "
+        ratio.Should().BeLessThan(8.0,
+            "quadrupling the child count must cost roughly 4x (linear), not 16x (O(N^2)); "
+            + $"50K took {tSmall.TotalMilliseconds:F0}ms and 200K took "
             + $"{tLarge.TotalMilliseconds:F0}ms, a ratio of {ratio:F2}");
     }
 
