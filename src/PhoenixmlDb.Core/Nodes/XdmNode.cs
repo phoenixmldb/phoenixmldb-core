@@ -1,3 +1,5 @@
+using System;
+using System.Threading;
 using PhoenixmlDb.Core;
 
 namespace PhoenixmlDb.Xdm.Nodes;
@@ -152,11 +154,103 @@ public abstract class XdmNode
     /// for element and document nodes, it is the concatenation of all descendant text nodes.
     /// </para>
     /// <para>
-    /// For <see cref="XdmElement"/> and <see cref="XdmDocument"/>, the string value requires
-    /// a tree traversal and is lazily computed. Until computed, it returns <see cref="string.Empty"/>.
+    /// For <see cref="XdmElement"/> and <see cref="XdmDocument"/>, the string value requires a
+    /// tree traversal. A node built by the parser has it computed up front. A node reconstructed
+    /// from storage does not, and must carry a <see cref="StringValueResolver"/> so the traversal
+    /// can be performed on first read — see that property for why this matters.
     /// </para>
     /// </remarks>
     public abstract string StringValue { get; }
+
+    /// <summary>
+    /// Computes the string value of a node whose value was not known at construction time.
+    /// </summary>
+    /// <param name="node">The node whose descendant text is to be concatenated.</param>
+    /// <returns>The XDM string value. The empty string is a legitimate result.</returns>
+    public delegate string XdmStringValueResolver(XdmNode node);
+
+    /// <summary>
+    /// Supplies <see cref="StringValue"/> on first read for a node whose value could not be
+    /// computed when it was constructed. Required for element and document nodes reconstructed
+    /// from storage, whose children are resolved lazily and so cannot be walked at build time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This exists because "not computed yet" and "genuinely empty" used to be the same
+    /// observable value. <see cref="StringValue"/> returned <see cref="string.Empty"/> for both,
+    /// so a node read from storage atomized to <c>""</c> and no caller could tell. Paths that
+    /// walk children (<c>fn:string</c>, explicit casts) saw the text; paths that read the cached
+    /// value (implicit atomization — numeric aggregates, general comparison) saw <c>""</c>. The
+    /// same query answered differently depending on what wrapped it, with no error raised.
+    /// </para>
+    /// <para>
+    /// A resolver is a SUPPORTED way for a storage layer outside this assembly to supply that
+    /// traversal. It replaces reaching the internal backing field, which only assemblies named
+    /// in <c>InternalsVisibleTo</c> could ever do — a list that does not, and should not,
+    /// include the storage layer.
+    /// </para>
+    /// <para>
+    /// The resolved value is cached, so the resolver runs at most once per node. It must not
+    /// return <c>null</c>; a node with no descendant text resolves to the empty string.
+    /// </para>
+    /// </remarks>
+    public XdmStringValueResolver? StringValueResolver { get; init; }
+
+    /// <summary>
+    /// The name of the <see cref="AppContext"/> switch backing <see cref="StrictStringValue"/>.
+    /// </summary>
+    public const string StrictStringValueSwitchName = "PhoenixmlDb.Xdm.StrictStringValue";
+
+    private static bool s_strictStringValue =
+        AppContext.TryGetSwitch(StrictStringValueSwitchName, out var enabled) && enabled;
+
+    /// <summary>
+    /// When enabled, reading <see cref="StringValue"/> on an element or document that has NEITHER
+    /// a computed value NOR a <see cref="StringValueResolver"/> throws instead of returning the
+    /// empty string. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default exists to keep behaviour unchanged for every consumer of this package. The
+    /// switch exists because that default is the defect: "not computed yet" and "genuinely empty"
+    /// are the same observable value, so a node that never had its value computed atomizes to
+    /// <c>""</c> and no caller can tell. That is how storage-backed aggregates came to return
+    /// wrong answers with no error raised (phoenixmldb/phoenixmldb-core#4).
+    /// </para>
+    /// <para>
+    /// Turn it on wherever a wrong answer is worse than a crash — engine test suites, conformance
+    /// runs, CI. A strict mode nobody enables catches nothing, so enabling it is the point rather
+    /// than an option: the suites that run it are what convert this class of defect from a silent
+    /// wrong number into a failing test.
+    /// </para>
+    /// <para>
+    /// Settable in code, or without recompiling via the AppContext switch
+    /// <c>PhoenixmlDb.Xdm.StrictStringValue</c> — in a <c>runtimeconfig.template.json</c>:
+    /// <code>{ "configProperties": { "PhoenixmlDb.Xdm.StrictStringValue": true } }</code>
+    /// The switch is read once at type initialization; the property is authoritative afterwards.
+    /// </para>
+    /// </remarks>
+    public static bool StrictStringValue
+    {
+        get => Volatile.Read(ref s_strictStringValue);
+        set => Volatile.Write(ref s_strictStringValue, value);
+    }
+
+    /// <summary>
+    /// Produces the value an element or document reports when it has no computed string value and
+    /// no resolver: the empty string, or an exception under <see cref="StrictStringValue"/>.
+    /// </summary>
+    /// <param name="node">The node being read, named in the exception message.</param>
+    private protected static string UnresolvedStringValue(XdmNode node) =>
+        StrictStringValue
+            ? throw new InvalidOperationException(
+                $"The string value of this {node.NodeKind} node was never computed and no "
+                + $"{nameof(StringValueResolver)} was supplied, so it cannot be determined. "
+                + "Returning the empty string here would be indistinguishable from a genuinely "
+                + "empty node. A node reconstructed from storage must be given a resolver — see "
+                + $"the NodeReader overload that takes one. To restore the previous "
+                + $"behaviour, set {nameof(XdmNode)}.{nameof(StrictStringValue)} to false.")
+            : string.Empty;
 
     /// <summary>
     /// The typed value of this node, as defined by the XDM <c>dm:typed-value</c> accessor.

@@ -14,11 +14,38 @@ public ref struct NodeReader
 {
     private ReadOnlySpan<byte> _buffer;
     private int _position;
+    private readonly XdmNode.XdmStringValueResolver? _stringValueResolver;
 
     public NodeReader(ReadOnlySpan<byte> buffer)
+        : this(buffer, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a reader that stamps <paramref name="stringValueResolver"/> onto every element and
+    /// document node it builds.
+    /// </summary>
+    /// <param name="buffer">The serialized node data.</param>
+    /// <param name="stringValueResolver">
+    /// Computes a node's string value on first read. Deserialized nodes carry child
+    /// <see cref="NodeId"/>s rather than child nodes, so their string value cannot be computed
+    /// here — only a caller holding the store can walk the subtree. Without a resolver such a
+    /// node reports the empty string, which is indistinguishable from a genuinely empty element
+    /// (phoenixmldb/phoenixmldb-core#4).
+    /// </param>
+    /// <remarks>
+    /// This overload exists because the storage layer never constructs
+    /// <see cref="XdmElement"/> or <see cref="XdmDocument"/> itself — every deserialization site
+    /// goes through this reader — so an init-only property on the node is unreachable from
+    /// outside this assembly. The resolver is passed once per reader and applied to every node it
+    /// produces, so a caller supplies ONE resolver closing over its read transaction rather than
+    /// a closure per node.
+    /// </remarks>
+    public NodeReader(ReadOnlySpan<byte> buffer, XdmNode.XdmStringValueResolver? stringValueResolver)
     {
         _buffer = buffer;
         _position = 0;
+        _stringValueResolver = stringValueResolver;
     }
 
     /// <summary>
@@ -78,7 +105,8 @@ public ref struct NodeReader
             Document = documentId,
             DocumentUri = documentUri,
             DocumentElement = documentElement,
-            Children = children
+            Children = children,
+            StringValueResolver = _stringValueResolver
         };
     }
 
@@ -142,7 +170,8 @@ public ref struct NodeReader
             Parent = parent,
             Attributes = attributes,
             NamespaceDeclarations = nsDecls,
-            Children = children
+            Children = children,
+            StringValueResolver = _stringValueResolver
         };
     }
 
