@@ -932,16 +932,53 @@ public class XmlDocumentParserTests
         // Warm up JIT so timing reflects the algorithm, not first-call overhead.
         _ = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(BuildXml(1000));
 
-        var xml = BuildXml(50_000);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
-        sw.Stop();
+        // Compare the RATIO of two sizes rather than asserting a wall-clock bound.
+        //
+        // This used to assert "50K children parse in under 2s". That is not the property under
+        // test — the property is that cost grows with N, not N^2 — and a wall-clock bound is
+        // load-dependent, so the test failed on a busy machine while the algorithm was fine. It
+        // blocked a release that way (measured at 2.27s on a box at load 19; the same build came
+        // in at 0.9s idle). A ratio cancels ambient load, because both measurements carry it.
+        //
+        // Doubling N costs ~2x if linear and ~4x if quadratic. The bound is 3.0: comfortably
+        // above the linear case even with noise, comfortably below the quadratic one it exists
+        // to catch.
+        TimeSpan TimeParse(string xml)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var r = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
+            sw.Stop();
+            r.NodeCount.Should().BeGreaterThan(0u);
+            return sw.Elapsed;
+        }
 
+        var small = BuildXml(25_000);
+        var large = BuildXml(50_000);
+
+        // Best-of-three each way: a single sample can be hit by a GC pause or a scheduler
+        // preemption, and the minimum is the closest thing to the algorithm's own cost.
+        var tSmall = TimeSpan.MaxValue;
+        var tLarge = TimeSpan.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var a = TimeParse(small);
+            if (a < tSmall) tSmall = a;
+            var b = TimeParse(large);
+            if (b < tLarge) tLarge = b;
+        }
+
+        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(large);
         result.NodeCount.Should().BeGreaterThan(50_000u);
-        // With the id->node index this completes in well under a second even in Debug.
-        // A linear per-child scan would take minutes for 50K children.
-        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
-            "string-value computation for large elements must be linear, not O(N^2)");
+
+        // Guard against a degenerate denominator on a very fast machine.
+        if (tSmall < TimeSpan.FromMilliseconds(5))
+            return;
+
+        var ratio = tLarge.TotalMilliseconds / tSmall.TotalMilliseconds;
+        ratio.Should().BeLessThan(3.0,
+            "doubling the child count must roughly double the cost (linear), not quadruple it "
+            + $"(O(N^2)); 25K took {tSmall.TotalMilliseconds:F0}ms and 50K took "
+            + $"{tLarge.TotalMilliseconds:F0}ms, a ratio of {ratio:F2}");
     }
 
     #endregion
