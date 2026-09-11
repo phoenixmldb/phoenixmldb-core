@@ -1,5 +1,52 @@
 # Release History
 
+## 1.7.0 — 2026-09-10
+
+Minor rather than patch: this adds public API.
+
+### Added
+
+- **`XdmNode.StringValueResolver`** — a supported way for a storage layer to supply a node's
+  string value. `NodeReader` takes one too, and that is the part that makes it usable: the
+  storage layer never constructs `XdmElement`/`XdmDocument` itself, so an init-only property
+  alone would have been a hook nobody outside this assembly could reach. The resolver is supplied
+  per reader, runs at most once per node, and caches its result — including the empty string,
+  which is a legitimate answer rather than a retry.
+
+- **`XdmNode.StrictStringValue`** (opt-in, default off; also settable via the AppContext switch
+  `PhoenixmlDb.Xdm.StrictStringValue`) — raises instead of returning `""` when a node has neither
+  a computed string value nor a resolver.
+
+### Why
+
+`XdmElement.StringValue` was `_stringValue ?? string.Empty`, so a node whose value had never been
+computed reported exactly what a genuinely empty node reports. Paths that WALK children
+(`fn:string`, explicit casts) saw the text; paths that READ the cached value (implicit
+atomization) saw `""`. The same predicate returned the right document on its own and `0` inside
+`count()`, with no error raised:
+
+    sum(collection()//balance)              Cannot cast '' to xs:double
+    count(collection()/c[region='west'])    0, where the predicate alone returns the document
+
+This is the root cause beneath the `fn:sum`/`avg`/`max`/`min` fix shipped in PhoenixmlDb.XQuery —
+that treated the symptom without knowing the cause.
+
+`StrictStringValue` ships OFF so no consumer changes behaviour on upgrade. It was measured before
+being adopted rather than assumed safe: with it on globally, the only failures across all 516 Xdm
+tests were the four asserting the empty-string fallback, and no production path broke. This
+repository's own test assemblies now run with it ON, because a strict mode nobody enables catches
+nothing.
+
+### Verified
+
+- Xdm.Tests 516/516 and Core.Tests 502/502, on `net8.0` and `net10.0`, with strict mode enabled
+- End-to-end against an LMDB store by the phoenixml database repo: **73 pass/13 fail → 85/1**
+
+### Note on release discipline
+
+From this release, `publish` is gated on the test job in CI. Until today every package in this
+org could reach nuget.org with a red suite. See `phoenixmldb-xslt/docs/RELEASE-HYGIENE.md`.
+
 ## 1.6.7 — 2026-08-24
 
 ### Changed
