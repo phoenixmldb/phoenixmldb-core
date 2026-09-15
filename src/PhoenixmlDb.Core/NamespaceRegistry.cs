@@ -8,6 +8,8 @@ namespace PhoenixmlDb.Core;
 /// Namespace URIs are permanent identities. Once one has shipped in a stored document it can
 /// never change — not even its scheme, which is part of the identity. Do not edit an existing
 /// entry; add a new id instead.
+/// Id 9 (<c>https://schemas.phoenixml.dev/2026/db</c>) is retired: it has no entry here and its value
+/// is never reused, because stored keys encode namespace ids.
 /// </remarks>
 public static class NamespaceRegistry
 {
@@ -21,10 +23,10 @@ public static class NamespaceRegistry
         (NamespaceId.Map,           "http://www.w3.org/2005/xpath-functions/map",   "map"),
         (NamespaceId.Array,        "http://www.w3.org/2005/xpath-functions/array", "array"),
         (NamespaceId.Math,         "http://www.w3.org/2005/xpath-functions/math",  "math"),
-        (NamespaceId.PhoenixmlDb,  "https://schemas.phoenixml.dev/2026/db",        "phx"),
         (NamespaceId.Xslt,         "http://www.w3.org/1999/XSL/Transform",         "xsl"),
         (NamespaceId.PhoenixmlMeta,"https://schemas.phoenixml.dev/2026/meta",      "dbxml"),
         (NamespaceId.DcTerms,      "http://purl.org/dc/terms/",                    "dcterms"),
+        (NamespaceId.PhoenixmlFunctions, "https://schemas.phoenixml.dev/2026/functions", "phx"),
     ];
 
     private static readonly Dictionary<string, NamespaceId> ByUri =

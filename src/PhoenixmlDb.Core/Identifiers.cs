@@ -240,10 +240,15 @@ public readonly record struct NamespaceId(uint Value) : IComparable<NamespaceId>
     public static NamespaceId Math => new(8);
 
     /// <summary>
-    /// The PhoenixmlDb extension namespace (<c>https://schemas.phoenixml.dev/2026/db</c>).
-    /// Contains database extension functions for use in XQuery expressions.
-    /// Conventionally bound to the <c>phx</c> prefix, which the engine pre-declares.
+    /// RETIRED. Id 9 was <c>https://schemas.phoenixml.dev/2026/db</c>, the former extension-function
+    /// namespace. It has no <see cref="NamespaceRegistry"/> entry and resolves to nothing.
     /// </summary>
+    /// <remarks>
+    /// The value stays reserved and must never be assigned to another URI: stored keys encode namespace
+    /// ids, so a reused id would silently move existing data into a different namespace. The extension
+    /// functions are in <see cref="PhoenixmlFunctions"/>.
+    /// </remarks>
+    [Obsolete("Id 9 (https://schemas.phoenixml.dev/2026/db) is retired and reserved: it resolves to nothing and is never reused. Extension functions are in NamespaceId.PhoenixmlFunctions.")]
     public static NamespaceId PhoenixmlDb => new(9);
 
     /// <summary>
@@ -268,6 +273,13 @@ public readonly record struct NamespaceId(uint Value) : IComparable<NamespaceId>
     /// identity; changing the scheme would change the identity.
     /// </remarks>
     public static NamespaceId DcTerms => new(12);
+
+    /// <summary>
+    /// The PhoeniXML extension-function namespace (<c>https://schemas.phoenixml.dev/2026/functions</c>).
+    /// Holds every PhoeniXML extension function, such as <c>phx:metadata</c> and <c>phx:stem</c>.
+    /// Conventionally bound to the <c>phx</c> prefix, which the XQuery library predeclares.
+    /// </summary>
+    public static NamespaceId PhoenixmlFunctions => new(13);
 
     /// <summary>
     /// The first namespace ID available for user-defined namespaces. IDs below this value
