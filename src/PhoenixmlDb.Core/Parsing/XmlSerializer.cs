@@ -198,17 +198,24 @@ public sealed class XmlSerializer
         var namespaceUri = _namespaceResolver(element.Namespace) ?? string.Empty;
         var prefix = element.Prefix;
 
+        // Always pass the element's namespace, even the empty one. The one-argument
+        // WriteStartElement takes the AMBIENT default namespace, so an element in no namespace
+        // under an ancestor's xmlns="urn:d" was opened in urn:d; writing its recorded xmlns=""
+        // then contradicted that in the same start tag and XmlWriter threw "The prefix '' cannot
+        // be redefined from 'urn:d' to ''" (phoenixmldb-core#6). Given "", XmlWriter emits the
+        // undeclaration itself when one is needed and nothing when it is not.
         if (prefix != null)
             writer.WriteStartElement(prefix, element.LocalName, namespaceUri);
-        else if (!string.IsNullOrEmpty(namespaceUri))
-            writer.WriteStartElement(element.LocalName, namespaceUri);
         else
-            writer.WriteStartElement(element.LocalName);
+            writer.WriteStartElement(element.LocalName, namespaceUri);
 
         // Write namespace declarations
         foreach (var nsDecl in element.NamespaceDeclarations)
         {
             var nsUri = _namespaceResolver(nsDecl.Namespace) ?? string.Empty;
+            // The default namespace the element was just opened in is already declared.
+            if (string.IsNullOrEmpty(nsDecl.Prefix) && prefix == null && nsUri == namespaceUri)
+                continue;
             if (string.IsNullOrEmpty(nsDecl.Prefix))
                 writer.WriteAttributeString("xmlns", nsUri);
             else
