@@ -1,5 +1,36 @@
 # Release History
 
+## 2.0.0 — 2026-09-15
+
+**Major because it breaks builds, not only behaviour.** Part of the coordinated
+namespace-consolidation train: `PhoenixmlDb.Core`, `PhoenixmlDb.XQuery` and `PhoenixmlDb.Xslt`
+all move to 2.0.0 together.
+
+> **This follows 1.7.0 directly.** Core was not part of the 1.8.0 train — it was unchanged, so
+> nothing was published for it — and there is no Core 1.8.0 or 1.9.0 to look for.
+
+### Breaking
+
+- **`NamespaceId.PhoenixmlDb` (id 9, `https://schemas.phoenixml.dev/2026/db`) is retired.** The
+  constant remains, marked `[Obsolete]`, and the registry no longer carries a row for it.
+
+  **If you build with `TreatWarningsAsErrors` and name that constant, this release fails your
+  build.** If you read id 9 out of `NamespaceRegistry` you now get nothing back. Both are
+  deliberate: the namespace held only `dbxml:metadata`, which has moved.
+
+- **Extension functions now live in `NamespaceId.PhoenixmlFunctions` (id 13),**
+  `https://schemas.phoenixml.dev/2026/functions`, conventional prefix `phx`. All six extension
+  functions move there — see `PhoenixmlDb.XQuery` 2.0.0.
+
+- **`dbxml` now means only `https://schemas.phoenixml.dev/2026/meta`.** It is no longer
+  overloaded between metadata and extension functions.
+
+### Fixed
+
+- **A no-namespace element opened in the ambient default namespace** rather than the empty one.
+  An element written with no prefix, inside a scope carrying a default namespace, took that
+  namespace instead of none.
+
 ## 1.7.0 — 2026-09-10
 
 Minor rather than patch: this adds public API.
