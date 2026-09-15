@@ -154,6 +154,13 @@ public class XmlSerializerRoundTripTests
     // -------------------------------------------------------------------------
 
     /// <summary>Parses <paramref name="xml"/> and returns the document + a flat node store.</summary>
+    /// <summary>Parse then serialize through the same path these tests use; for sibling test classes.</summary>
+    internal string SerializeForTest(string xml)
+    {
+        var (doc, nodeStore) = ParseToStore(xml);
+        return CreateSerializer(nodeStore).Serialize(doc);
+    }
+
     private (XdmDocument doc, Dictionary<NodeId, XdmNode> nodeStore) ParseToStore(string xml)
     {
         var parser = new XmlDocumentParser(
