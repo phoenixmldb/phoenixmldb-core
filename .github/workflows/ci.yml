@@ -95,13 +95,33 @@ jobs:
           name: nuget-packages
           path: ./artifacts/*.nupkg
 
+  # The serializer wrote Environment.NewLine (CRLF on Windows) when indenting, and nothing ran
+  # this suite on Windows, so a whole class of per-OS byte differences could not fail CI. Same
+  # job as the engine repos' test-windows; it gates publish.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+          dotnet-quality: 'preview'
+
+      - name: Test
+        run: |
+          dotnet test tests/PhoenixmlDb.Core.Tests -c Release
+          dotnet test tests/PhoenixmlDb.Xdm.Tests -c Release
+
   publish:
     # `build` runs the test suites as one of its steps, so this DOES gate a release on tests —
     # a red suite fails build, and publish never runs. Checked 2026-09-10 rather than assumed:
     # phoenixmldb-xslt keeps tests in a separate job and had to be gated explicitly, and the
     # same edit was briefly applied here, referencing a `test` job that does not exist and
     # breaking the workflow file. Two repos, two shapes.
-    needs: build
+    needs: [build, test-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
