@@ -73,7 +73,12 @@ public sealed class XmlSerializer
         {
             Indent = indent,
             OmitXmlDeclaration = false,
-            Encoding = Encoding.UTF8
+            Encoding = Encoding.UTF8,
+            // NewLineChars defaults to Environment.NewLine, so indented output was CRLF on
+            // Windows and LF elsewhere: the same document serialized to different bytes per OS.
+            // Same fix as phoenixmldb-xslt#249 and phoenixmldb-xquery#142.
+            NewLineHandling = NewLineHandling.Replace,
+            NewLineChars = "\n",
         };
     }
 
