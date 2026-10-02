@@ -424,6 +424,20 @@ public class XmlSerializerTests
     }
 
     [Fact]
+    public void Serialize_WithIndent_WritesLfOnEveryOs()
+    {
+        // Environment.NewLine made this CRLF on Windows only, so the Linux CI job cannot fail
+        // it; test-windows is its real check.
+        var root = CreateElement("root");
+        var child = CreateElement("child", NamespaceId.None, null, root.Id);
+        root = SetChildren(root, child.Id);
+
+        var xml = CreateSerializer(indent: true).Serialize(root);
+
+        xml.Should().Contain("\n").And.NotContain("\r");
+    }
+
+    [Fact]
     public void Serialize_WithoutIndent_ProducesCompactOutput()
     {
         var root = CreateElement("root");
