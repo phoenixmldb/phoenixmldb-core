@@ -36,18 +36,18 @@ public interface IStorageEngine : IDisposable, IAsyncDisposable
     bool IsReadOnly { get; }
 
     /// <summary>
-    /// Creates a consistent backup of the database to the specified directory.
-    /// Safe to call while the database is actively being read/written; the resulting
-    /// backup reflects a single MVCC snapshot.
+    /// Creates a consistent backup of the database as a single file.
+    /// Safe to call while the database is actively being read/written; the backup is a
+    /// consistent point-in-time snapshot.
     /// </summary>
-    /// <param name="destinationPath">Directory to write the backup into. Created if missing.</param>
-    /// <param name="compact">If true, compacts the database (removes free pages). Slower
-    /// but produces a smaller backup.</param>
+    /// <param name="destinationPath">The full path of the backup FILE to create or replace (not a
+    /// directory). Its parent directories are created if missing.</param>
+    /// <param name="compact">If true, free pages are omitted, giving a smaller backup at some
+    /// extra cost.</param>
     /// <remarks>
-    /// Distinguished from <see cref="SnapshotAsync"/> by output target: this writes files
-    /// to a directory (engine-native format); <see cref="SnapshotAsync"/> streams to an
-    /// arbitrary <see cref="Stream"/>. Choose based on whether the consumer wants files
-    /// or a stream.
+    /// Distinguished from <see cref="SnapshotAsync"/> by output target: this writes one file in
+    /// the engine's native format; <see cref="SnapshotAsync"/> streams to an arbitrary
+    /// <see cref="Stream"/>. Choose based on whether the consumer wants a file or a stream.
     /// </remarks>
     void BackupTo(string destinationPath, bool compact);
 
