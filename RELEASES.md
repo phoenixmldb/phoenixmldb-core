@@ -14,6 +14,11 @@
   metadata names to `https://schemas.phoenixml.dev/2026/app`, the engine's namespace for
   application data. The 2.0.0 notes below said `.../2026/meta`, which is reserved for metadata the
   engine itself sets and is never the default.
+- **Documentation:** `IStorageEngine.BackupTo`'s `destinationPath` is the full path of the backup
+  file to create or replace, not a directory; its parent directories are created. The backup is a
+  consistent point-in-time snapshot, and `compact` omits free pages. The 2.0.0 docs said
+  "directory", which the engine and every caller contradict: an implementation that followed them
+  failed with an IOException, and only after the full copy.
 
 ## 2.0.0 — 2026-09-15
 
