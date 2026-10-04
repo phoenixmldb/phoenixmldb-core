@@ -1,5 +1,20 @@
 # Release History
 
+## Unreleased
+
+- **`XdmValue.From(DateTime)` works.** It threw `NotSupportedException` while `DateTimeOffset` was
+  accepted. A `DateTime` with `Kind` `Utc` is stored as an `xs:dateTime` at offset Z, and one with
+  `Kind` `Local` at the machine's offset for that moment. `Kind` `Unspecified` throws
+  `ArgumentException`: it names no instant, and a stored `xs:dateTime` always carries an offset, so
+  guessing one would store a plausible wrong value. `XdmValue.To<DateTime>` returns the stored
+  instant as a UTC `DateTime`.
+- **`From`'s error names the value's runtime type,** not the call site's type argument (which was
+  `Object` for every value passed through `object`).
+- **Documentation:** `ContainerOptions.DefaultMetadataNamespace`, when unset, resolves unqualified
+  metadata names to `https://schemas.phoenixml.dev/2026/app`, the engine's namespace for
+  application data. The 2.0.0 notes below said `.../2026/meta`, which is reserved for metadata the
+  engine itself sets and is never the default.
+
 ## 2.0.0 — 2026-09-15
 
 **Major because it breaks builds, not only behaviour.** Part of the coordinated
