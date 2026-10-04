@@ -1787,6 +1787,16 @@ public readonly struct XdmValue : IEquatable<XdmValue>
                 StoredAs: [XdmType.DateTime],
                 To: v => (DateTimeOffset)v.RawValue!),
 
+            // A DateTime is an xs:dateTime when its Kind says which instant it is: Utc gives
+            // offset Z, Local the machine's offset at that moment. Unspecified names no instant,
+            // and a stored xs:dateTime always carries an offset (the value is a DateTimeOffset),
+            // so guessing one would store a plausible wrong value; FromDateTime refuses it.
+            // Read back, the stored instant is returned as a UTC DateTime.
+            [typeof(DateTime)] = new(
+                From: v => FromDateTime((DateTime)v),
+                StoredAs: [XdmType.DateTime],
+                To: v => ((DateTimeOffset)v.RawValue!).UtcDateTime),
+
             [typeof(DateOnly)] = new(
                 From: v => Date((DateOnly)v),
                 StoredAs: [XdmType.Date],
@@ -1863,10 +1873,22 @@ public readonly struct XdmValue : IEquatable<XdmValue>
         if (ClrTypeMap.TryGetValue(value.GetType(), out var mapping))
             return mapping.From(value);
 
+        // Name the runtime type: dispatch is on it, and typeof(T) is "Object" for every value
+        // that arrives through object.
         throw new NotSupportedException(
-            $"No XDM representation for CLR type '{typeof(T).Name}'. Supported types: " +
+            $"No XDM representation for CLR type '{value.GetType().Name}'. Supported types: " +
             string.Join(", ", ClrTypeMap.Keys.Select(t => t.Name)) + ".");
     }
+
+    private static XdmValue FromDateTime(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => DateTime(new DateTimeOffset(value, TimeSpan.Zero)),
+        DateTimeKind.Local => DateTime(new DateTimeOffset(value)),
+        _ => throw new ArgumentException(
+            "A DateTime with Kind Unspecified does not say which instant it is, and an xs:dateTime " +
+            "is stored with a timezone offset. Use DateTime.SpecifyKind(value, DateTimeKind.Utc) " +
+            "(or Local), or pass a DateTimeOffset.", nameof(value)),
+    };
 
     /// <summary>
     /// Converts this value to a supported CLR type. The stored <see cref="XdmType"/> must

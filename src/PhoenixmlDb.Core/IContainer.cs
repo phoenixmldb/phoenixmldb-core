@@ -736,9 +736,12 @@ public sealed class ContainerOptions
     /// The namespace URI that unqualified metadata names resolve to in this container.
     /// </summary>
     /// <remarks>
-    /// Defaults to <c>https://schemas.phoenixml.dev/2026/meta</c>. Set this to your own
-    /// application namespace so two applications sharing a database cannot collide on a
-    /// common name such as <c>status</c>.
+    /// When unset, the database engine resolves unqualified names to
+    /// <c>https://schemas.phoenixml.dev/2026/app</c>, a namespace for application data.
+    /// <c>https://schemas.phoenixml.dev/2026/meta</c> (<see cref="NamespaceId.PhoenixmlMeta"/>,
+    /// prefix <c>dbxml</c>) is reserved for metadata the engine itself sets, and is never the
+    /// default. Set this to your own application namespace so two applications sharing a
+    /// database cannot collide on a common name such as <c>status</c>.
     /// </remarks>
     public string? DefaultMetadataNamespace { get; set; }
 
