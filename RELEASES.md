@@ -1,7 +1,12 @@
 # Release History
 
-## Unreleased
+## 2.1.0 — 2026-10-05
 
+- **Indented serialization writes LF on every OS.** `XmlSerializer` used `Environment.NewLine`, so
+  indented output was CRLF on Windows and LF elsewhere, and the same document serialized to
+  different bytes per OS. It now writes LF everywhere, matching the engines (phoenixmldb-xslt #249,
+  phoenixmldb-xquery #142). The CI now also runs the test suites on Windows, and that job gates
+  publishing.
 - **`XdmValue.From(DateTime)` works.** It threw `NotSupportedException` while `DateTimeOffset` was
   accepted. A `DateTime` with `Kind` `Utc` is stored as an `xs:dateTime` at offset Z, and one with
   `Kind` `Local` at the machine's offset for that moment. `Kind` `Unspecified` throws
