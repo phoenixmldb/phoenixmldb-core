@@ -841,6 +841,55 @@ public class XmlDocumentParserTests
     }
 
     [Fact]
+    public void Parse_AnonymousType_IsAnnotatedOnlyThroughTheAnnotator()
+    {
+        // <root> and @unit have anonymous types: there is no name to record, so by default they
+        // stay untyped and look like nodes that were never validated. An annotator names them.
+        const string schemaXml = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="root">
+                <xs:complexType>
+                  <xs:sequence><xs:element name="n" type="xs:integer"/></xs:sequence>
+                  <xs:attribute name="unit">
+                    <xs:simpleType><xs:restriction base="xs:string"/></xs:simpleType>
+                  </xs:attribute>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+            """;
+        var schemas = new System.Xml.Schema.XmlSchemaSet();
+        using (var schemaReader = XmlReader.Create(new System.IO.StringReader(schemaXml)))
+            schemas.Add(null, schemaReader);
+        schemas.Compile();
+        const string xml = "<root unit='kg'><n>1</n></root>";
+
+        var plain = CreateParser();
+        using (var reader = new System.IO.StringReader(xml))
+        {
+            var result = plain.Parse(reader, documentUri: null, schemas);
+            result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "root")
+                .TypeAnnotation.Should().Be(XdmTypeName.Untyped);
+            result.Nodes.OfType<XdmAttribute>().Single(a => a.LocalName == "unit")
+                .TypeAnnotation.Should().Be(XdmTypeName.UntypedAtomic);
+        }
+
+        var anonymous = new XdmTypeName(new NamespaceId(999), "anonymous");
+        var named = CreateParser();
+        named.SchemaTypeAnnotator = type => type.QualifiedName.IsEmpty ? anonymous : null;
+        using (var reader = new System.IO.StringReader(xml))
+        {
+            var result = named.Parse(reader, documentUri: null, schemas);
+            result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "root")
+                .TypeAnnotation.Should().Be(anonymous);
+            result.Nodes.OfType<XdmAttribute>().Single(a => a.LocalName == "unit")
+                .TypeAnnotation.Should().Be(anonymous);
+            // Returning null keeps the default for a named type.
+            result.Nodes.OfType<XdmElement>().Single(e => e.LocalName == "n")
+                .TypeAnnotation.Should().Be(new XdmTypeName(NamespaceId.Xsd, "integer"));
+        }
+    }
+
+    [Fact]
     public void Parse_SchemaValidatedAttribute_PopulatesTypeAnnotation()
     {
         // Attribute @count declared as xs:int; after schema-validating parse the
