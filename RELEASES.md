@@ -1,5 +1,19 @@
 # Release History
 
+## 2.2.0 — 2026-10-06
+
+Minor because it adds API. Nothing changes for existing callers.
+
+- **New: `XmlDocumentParser.SchemaTypeAnnotator`.** A schema-validating parse annotates each
+  element and attribute with its schema type's qualified name. That cannot work for a node whose
+  type is anonymous, which has no name: the node stayed `xs:untyped` (or `xs:untypedAtomic`) and
+  could not be told from one that was never validated. `SchemaTypeAnnotator` is an optional
+  callback: given the schema type the reader reports (for a union, the member that matched), it
+  returns the annotation to record, or `null` to keep the default. Left unset, the parser behaves
+  exactly as before. The party that owns the schemas can use it to give anonymous types names of
+  its own and resolve them again later; PhoenixmlDb.XQuery does so from its next release, which
+  therefore needs this version.
+
 ## 2.1.0 — 2026-10-05
 
 - **Indented serialization writes LF on every OS.** `XmlSerializer` used `Environment.NewLine`, so
