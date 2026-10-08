@@ -1,5 +1,99 @@
 # Release History
 
+## 2.3.0 — 2026-10-08
+
+Minor because it adds API. Nothing changes for existing callers.
+
+- **New: the shared schema layer, `PhoenixmlDb.Core.Schema`.** One place to load, compile, cache
+  and validate against XSD schemas, so that every consumer resolves, caches, restricts and reports
+  the same way. This release adds the layer. PhoenixmlDb.XQuery reads all its schema documents
+  through it from its next release.
+
+  - **`SchemaSource`**: a schema document the host supplies. `FromText(text, uri)`,
+    `FromResource(assembly, name, uri)`, `FromStore(uri, open, version)`. Always named by an
+    absolute URI; text with a relative URI is an `ArgumentException` rather than a resolve against
+    the current directory. Each carries a version token (a content hash, or the store's version
+    id).
+  - **`ISchemaAccessGate`**: the one route by which any other schema document is read: a root
+    named by URI and every `xs:include`, `xs:import` and `xs:redefine`. `OpenAsync` and
+    `GetVersionAsync` both receive the absolute URI, the location as it was written, and the
+    referring document. Nothing in the layer opens a file or a connection itself.
+    `SchemaAccessGate.SuppliedOnly` admits nothing; `SchemaAccessGate.LocalFiles(roots…)` admits
+    files under the given directories, decided on the path of the opened file on Linux and
+    Windows; on other platforms it refuses any path with a symbolic link below a root. **The roots
+    must be writable only by the operator.** There is no gate that fetches from the network; a
+    host that wants one supplies it.
+  - **`SchemaCompiler.CompileAsync`** (and a blocking `Compile`) reads the whole closure first,
+    each document once, then compiles from memory and fetches nothing while compiling. It returns
+    a `CompiledSchema`: the compiled `XmlSchemaSet`, and every document of the closure with the
+    version compiled.
+  - **`SchemaCache`**: keeps compiled schemas until **any** document of their closure changes,
+    not only a root. `CheckInterval` (30 s by default; zero asks on every use; infinite never
+    asks), `Invalidate(uri)`, `Clear()`, at most 256 schemas, least recently used out first.
+    Requests that arrive together compile once; a failed compilation is not kept.
+    `SchemaCache.Default` is shared; a host can make its own.
+  - **`SchemaValidator.Validate`**: one call, one result: `IsValid`, the diagnostics in document
+    order, and `Truncated` when validation stopped early.
+  - **`SchemaDiagnostic`**: severity, message, source URI, line, column, for compilation and
+    validation alike. `SchemaCompilationException` carries them. A validation error also has
+    `Code`, the XSD validation rule it reports (`cvc-complex-type.2.4.a`, `cvc-pattern-valid`),
+    and `MessageId`, the schema processor's own name for the message, which is the same for every
+    diagnostic of one kind whatever its text says. Both come from which message System.Xml raised,
+    never from the wording of a message. A message that covers two rules (a duplicate key and a
+    duplicate unique value; an abstract element and an abstract type) has an id and no code. Both
+    are `null` on a runtime where System.Xml's private state cannot be read, and the ids are
+    System.Xml's names, not a contract of this library.
+  - **`XmlCatalog`**: OASIS XML Catalogs 1.1, every entry of it (`uri`, `system`, `public`,
+    `rewriteURI`, `rewriteSystem`, `uriSuffix`, `systemSuffix`, `delegateURI`, `delegateSystem`,
+    `delegatePublic`, `group`, `nextCatalog`, with `xml:base` and `prefer`), set through
+    `SchemaCompileOptions.Catalog`. Names compare after the specification's URI normalization,
+    and a `urn:publicid:` name is read as the public identifier it stands for. A catalog only
+    renames: what it maps a name to is still read from a source or through the gate. A catalog
+    that an entry delegates to is read when the catalog is loaded, not at the first lookup.
+
+  **Defaults that are stricter than a bare `XmlSchemaSet` or validating reader:**
+
+  - A referenced schema document that cannot be read **fails the compilation**. System.Xml
+    reports it as a warning and compiles what is left, so an `xs:import` nothing else used
+    compiled silently without it.
+  - A schema document may not have a document type declaration, and may not nest deeper than 512
+    levels.
+  - Validation: the document element **must be declared by the schema** (`RequireDeclaredRoot`).
+    System.Xml says nothing about an element it has no declaration for, so a document validated
+    against a schema for another vocabulary was reported valid. `xsi:schemaLocation` and inline
+    schemas in the instance are never followed, and the instance may not have a document type
+    declaration.
+  - A cached schema is given to a request only after that request's own gate has admitted every
+    document of it. A gate object that the cache has not seen is always asked first; after that
+    its answer holds for one `CheckInterval`. A host that uses one gate object for many requests
+    and needs a withdrawn permission to take effect at once sets `CheckInterval` to
+    `TimeSpan.Zero`.
+
+  **Limits** (`SchemaCompileOptions`, all settable): 16 MiB for one schema document, 64 MiB for
+  one compilation, 1,024 documents. No more than the limit is taken from any stream. Validation:
+  1,000 diagnostics; no depth limit unless the host sets `MaxDepth`. A catalog: 64 files.
+
+  **Pattern facets.** `SchemaCompileOptions.PatternMatchTimeout` bounds one match of an
+  `xs:pattern` facet, in compilation and in every validation against the compiled schema. It is
+  off by default (`null`). With it, a schema whose own enumeration, default or fixed values run
+  past the limit does not compile, and a validation that runs past it stops with
+  `PatternTimedOut` (and `Truncated`) set. A host that compiles schemas or validates documents it
+  does not trust should set it. It reaches System.Xml's compiled expressions through private
+  state; on a runtime where that is not possible, a schema that declares a pattern does not
+  compile with a limit set, instead of being left unbounded.
+
+  **XSD 1.1.** The processor is System.Xml's, which implements XSD 1.0. With
+  `Xsd11Compatibility` (on by default) the parts a schema marks as 1.1-only with `vc:` attributes
+  are left out, as XSD 1.1 §4.2.2 says a 1.0 processor is to, and `xs:dayTimeDuration`,
+  `xs:yearMonthDuration` and `xs:dateTimeStamp` are read as the 1.0 types they restrict. The 1.1
+  type's own constraint is not applied: an `xs:dayTimeDuration` of `P1Y` is accepted.
+
+  **Known gaps:**
+
+  - A `CompiledSchema` is not opaque: its `XmlSchemaSet` exposes every declaration, and
+    `Documents` lists each document's URI. A host that must keep those from the code it runs
+    keeps the object to itself.
+
 ## 2.2.0 — 2026-10-06
 
 Minor because it adds API. Nothing changes for existing callers.
