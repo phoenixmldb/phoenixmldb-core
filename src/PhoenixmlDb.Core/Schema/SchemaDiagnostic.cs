@@ -16,6 +16,11 @@ public enum SchemaSeverity
 /// <summary>
 /// One thing a schema compilation or a validation reports, in the same shape whoever asks.
 /// </summary>
+/// <remarks>
+/// There is no <c>cvc-…</c> rule code: the schema processor (System.Xml's) does not report which
+/// validation rule of the specification a message belongs to, and nothing here guesses it from
+/// the message text.
+/// </remarks>
 /// <param name="Severity">Warning or error.</param>
 /// <param name="Message">The message, as the schema processor gives it.</param>
 /// <param name="SourceUri">The document the diagnostic is about, when it is known.</param>
