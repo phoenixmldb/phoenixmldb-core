@@ -962,95 +962,43 @@ public class XmlDocumentParserTests
         root!.StringValue.Should().Be(expected.ToString());
     }
 
+    /// <summary>
+    /// Guards against a quadratic string-value computation: resolving each child by a scan of
+    /// the node list made a large element O(N^2) (3573e93).
+    /// </summary>
+    /// <remarks>
+    /// One parse of one size against one bound, chosen so that the two algorithms are far apart
+    /// on both sides of it. Measured on a machine that was also running a conformance sweep, for
+    /// 100,000 children:
+    /// <code>
+    ///     linear (the parser as it is)         191 ms    bound is 100x above
+    ///     quadratic (the old scan restored) 129,905 ms    bound is 6.5x below
+    /// </code>
+    /// So load, a slow runner or a collection can cost two orders of magnitude before this fails,
+    /// and the regression still fails it. Earlier forms asserted what the machine was doing rather
+    /// than what the algorithm does: a 2 s bound that parallel test assemblies pushed past
+    /// (phoenixmldb-core#3), then two ratios of a small parse to a large one that a collection
+    /// in the large one broke on CI, after which the assertion was skipped on CI altogether. This
+    /// one runs everywhere.
+    /// </remarks>
     [Fact]
     public void Parse_ElementWithManyChildren_ScalesLinearly()
     {
-        // O(N^2) string-value computation would blow up here. Assert a 50K-child element
-        // parses (string-value included) well within a generous budget, and that doubling
-        // the child count does not blow up super-linearly.
-        static string BuildXml(int n)
-        {
-            var sb = new System.Text.StringBuilder(n * 8 + 16);
-            sb.Append("<root>");
-            for (int i = 0; i < n; i++)
-                sb.Append("<t>x</t>");
-            sb.Append("</root>");
-            return sb.ToString();
-        }
+        const int children = 100_000;
+        var sb = new System.Text.StringBuilder(children * 8 + 16);
+        sb.Append("<root>");
+        for (int i = 0; i < children; i++)
+            sb.Append("<t>x</t>");
+        sb.Append("</root>");
+        var xml = sb.ToString();
 
-        // Warm up JIT so timing reflects the algorithm, not first-call overhead.
-        _ = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(BuildXml(1000));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
+        sw.Stop();
 
-        // NOT RUN ON CI. This is a wall-clock linearity check, and a shared runner cannot
-        // measure it reliably — quarantined rather than deleted, and rather than loosened until
-        // it asserts nothing.
-        //
-        // The property is real and it holds. Measured locally, best-of-seven, across a 16x span:
-        //
-        //     N= 25,000    199 ms    7.97 us/element
-        //     N= 50,000    445 ms    8.91 us/element
-        //     N=100,000    889 ms    8.89 us/element
-        //     N=200,000  1,672 ms    8.36 us/element
-        //     N=400,000  3,310 ms    8.28 us/element
-        //
-        // Per-element cost is flat, which is what "linear, not O(N^2)" means. The parser is fine.
-        //
-        // On GitHub's 2-core runner the same test reported 50K at 29ms and 200K at 528ms — a
-        // ratio of 18, quadratic-shaped. But 29ms is 0.58us/element, fifteen times faster than
-        // this machine manages, which is not plausible for the same algorithm; the large case is
-        // almost certainly paying for GC that the small one escapes on a memory-constrained
-        // runner. An environment artifact, not the algorithm.
-        //
-        // This test has been wrong three times today — an absolute 2s bound, a 2x ratio bounded
-        // at 3.0, a 4x ratio bounded at 8.0 — each failing on measurement noise while the code
-        // was correct. Now that `publish` is gated on tests, that is a release blocker every
-        // time. A timing assertion on shared infrastructure is the wrong instrument; the right
-        // fix is a benchmark that reports, not a test that fails.
-        // On CI the timing assertion is skipped but the test still ASSERTS something: that a
-        // 200,000-child element parses correctly. Not a silent early return — an early return
-        // recorded as a pass is the fail-silent shape this codebase keeps finding. A weaker
-        // assertion that runs everywhere beats a strong one that is noise half the time.
-        var onCi = Environment.GetEnvironmentVariable("CI") == "true"
-            || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true";
-
-        TimeSpan TimeParse(string xml)
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var r = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
-            sw.Stop();
-            r.NodeCount.Should().BeGreaterThan(0u);
-            return sw.Elapsed;
-        }
-
-        var small = BuildXml(50_000);
-        var large = BuildXml(200_000);
-
-        var tSmall = TimeSpan.MaxValue;
-        var tLarge = TimeSpan.MaxValue;
-        for (var i = 0; i < 3; i++)
-        {
-            var a = TimeParse(small);
-            if (a < tSmall) tSmall = a;
-            var b = TimeParse(large);
-            if (b < tLarge) tLarge = b;
-        }
-
-        var result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(small);
-        result.NodeCount.Should().BeGreaterThan(50_000u);
-
-        // Correctness holds everywhere, timing does not.
-        new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(large)
-            .NodeCount.Should().BeGreaterThan(200_000u, "a 200K-child element must parse correctly");
-
-        // Degenerate denominator on a very fast machine, or a shared runner we cannot time on.
-        if (onCi || tSmall < TimeSpan.FromMilliseconds(20))
-            return;
-
-        var ratio = tLarge.TotalMilliseconds / tSmall.TotalMilliseconds;
-        ratio.Should().BeLessThan(8.0,
-            "quadrupling the child count must cost roughly 4x (linear), not 16x (O(N^2)); "
-            + $"50K took {tSmall.TotalMilliseconds:F0}ms and 200K took "
-            + $"{tLarge.TotalMilliseconds:F0}ms, a ratio of {ratio:F2}");
+        result.NodeCount.Should().BeGreaterThan((uint)children, "a 100K-child element must parse correctly");
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(20),
+            "string-value computation for a large element must be linear; a quadratic one takes minutes here");
     }
 
     #endregion
