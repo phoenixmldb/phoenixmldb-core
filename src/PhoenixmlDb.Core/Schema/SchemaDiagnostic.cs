@@ -17,9 +17,9 @@ public enum SchemaSeverity
 /// One thing a schema compilation or a validation reports, in the same shape whoever asks.
 /// </summary>
 /// <remarks>
-/// There is no <c>cvc-…</c> rule code: the schema processor (System.Xml's) does not report which
-/// validation rule of the specification a message belongs to, and nothing here guesses it from
-/// the message text.
+/// <see cref="Code"/> and <see cref="MessageId"/> come from which message the schema processor
+/// (System.Xml's) reports, never from the wording of the message. The processor keeps that in
+/// private state, so both are null where it cannot be read.
 /// </remarks>
 /// <param name="Severity">Warning or error.</param>
 /// <param name="Message">The message, as the schema processor gives it.</param>
@@ -33,13 +33,34 @@ public sealed record SchemaDiagnostic(
     int Line = 0,
     int Column = 0)
 {
+    /// <summary>
+    /// The validation rule of the XSD specification that the diagnostic reports, by the name
+    /// the specification gives it (<c>cvc-complex-type.2.4.a</c>, <c>cvc-pattern-valid</c>), for
+    /// a validation error whose message means exactly one rule. Null for every other
+    /// diagnostic: a message that covers several rules (a duplicate key and a duplicate unique
+    /// value share one), a compilation diagnostic, and one the layer reports itself.
+    /// </summary>
+    public string? Code { get; init; }
+
+    /// <summary>
+    /// The schema processor's own name for the message (<c>Sch_UndeclaredElement</c>): the same
+    /// for every diagnostic of one kind, whatever names and values its text carries, so a host
+    /// can tell diagnostics apart without reading the text. Null when it is not known, and for
+    /// a diagnostic the layer reports itself. The names are System.Xml's and are not a contract
+    /// of this library: they may differ between .NET versions.
+    /// </summary>
+    public string? MessageId { get; init; }
+
     internal static SchemaDiagnostic From(XmlSchemaException exception, XmlSeverityType severity)
-        => new(
+    {
+        var (messageId, _) = SchemaMessageIds.Of(exception);
+        return new(
             severity == XmlSeverityType.Warning ? SchemaSeverity.Warning : SchemaSeverity.Error,
             exception.Message,
             string.IsNullOrEmpty(exception.SourceUri) ? null : exception.SourceUri,
             exception.LineNumber,
-            exception.LinePosition);
+            exception.LinePosition) { MessageId = messageId };
+    }
 
     /// <summary>The message with its position, for a log or an exception.</summary>
     public override string ToString()
