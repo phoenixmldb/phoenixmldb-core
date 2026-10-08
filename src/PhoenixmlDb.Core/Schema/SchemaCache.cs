@@ -12,6 +12,14 @@ public sealed record SchemaCacheOptions
     /// <see cref="Timeout.InfiniteTimeSpan"/> never asks, and then only
     /// <see cref="SchemaCache.Invalidate"/> and <see cref="SchemaCache.Clear"/> make a schema new.
     /// </summary>
+    /// <remarks>
+    /// The interval is also how long a gate's admission of a cached schema is taken as still
+    /// holding. A host that uses <b>one gate object for many requests</b> can therefore be given a
+    /// cached schema for up to one interval after that gate would refuse one of its documents,
+    /// for example after a permission is removed. Such a host sets <see cref="TimeSpan.Zero"/>,
+    /// which asks the gate on every use, or uses a gate object for each request: a gate object
+    /// the cache has not seen is always asked first.
+    /// </remarks>
     public TimeSpan CheckInterval { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>The most compiled schemas kept; the least recently used goes first. 256 by default.</summary>
