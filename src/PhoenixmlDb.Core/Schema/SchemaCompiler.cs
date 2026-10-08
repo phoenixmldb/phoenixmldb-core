@@ -67,7 +67,7 @@ public static class SchemaCompiler
                 "The schema could not be compiled: " + errors[0].Message
                 + (errors.Length > 1 ? $" (and {errors.Length - 1} more)" : ""),
                 diagnostics);
-        return new CompiledSchema(closure.Set!, rootList, closure.Documents, diagnostics, gate.Identity);
+        return new CompiledSchema(closure.Set!, rootList, closure.Documents, diagnostics, gate.Identity, closure.Requests);
     }
 
     /// <summary>
@@ -124,6 +124,7 @@ public static class SchemaCompiler
         private readonly Dictionary<string, SchemaSource> _sources = new(StringComparer.Ordinal);
         private readonly Dictionary<string, byte[]> _content = new(StringComparer.Ordinal);
         private readonly List<SchemaDocumentVersion> _documents = [];
+        private readonly Dictionary<string, SchemaDocumentRequest> _requests = new(StringComparer.Ordinal);
         private long _totalBytes;
 
         public Closure(ISchemaAccessGate gate, IEnumerable<SchemaSource>? sources, SchemaCompileOptions options)
@@ -141,6 +142,8 @@ public static class SchemaCompiler
         public List<SchemaDiagnostic> Errors { get; } = [];
 
         public IReadOnlyList<SchemaDocumentVersion> Documents => _documents;
+
+        public IReadOnlyDictionary<string, SchemaDocumentRequest> Requests => _requests;
 
         public XmlSchemaSet? Set { get; set; }
 
@@ -230,6 +233,7 @@ public static class SchemaCompiler
                 }
                 _totalBytes += buffer.Length;
                 _documents.Add(new SchemaDocumentVersion(request.Uri, version));
+                _requests[request.Uri.AbsoluteUri] = request;
                 return buffer.ToArray();
             }
         }
