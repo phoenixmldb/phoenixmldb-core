@@ -15,8 +15,10 @@ public readonly record struct SchemaDocumentVersion(Uri Uri, string Version);
 public sealed class CompiledSchema
 {
     internal CompiledSchema(XmlSchemaSet schemaSet, IReadOnlyList<Uri> roots,
-        IReadOnlyList<SchemaDocumentVersion> documents, IReadOnlyList<SchemaDiagnostic> warnings, string gateIdentity)
+        IReadOnlyList<SchemaDocumentVersion> documents, IReadOnlyList<SchemaDiagnostic> warnings, string gateIdentity,
+        IReadOnlyDictionary<string, SchemaDocumentRequest> requests)
     {
+        Requests = requests;
         SchemaSet = schemaSet;
         Roots = roots;
         Documents = documents;
@@ -43,6 +45,9 @@ public sealed class CompiledSchema
 
     /// <summary>Warnings the compilation reported. A schema with errors is never constructed.</summary>
     public IReadOnlyList<SchemaDiagnostic> Warnings { get; }
+
+    /// <summary>The request each document was read by, keyed by its absolute URI.</summary>
+    internal IReadOnlyDictionary<string, SchemaDocumentRequest> Requests { get; }
 
     /// <summary>The <see cref="ISchemaAccessGate.Identity"/> of the gate its documents were read through.</summary>
     public string GateIdentity { get; }
