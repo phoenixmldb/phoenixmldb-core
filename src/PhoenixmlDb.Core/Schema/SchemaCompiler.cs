@@ -91,7 +91,9 @@ public static class SchemaCompiler
         var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
         try
         {
-            foreach (var root in roots)
+            // The roots, where the catalog maps them to; then what the catalog gave for an import
+            // that names only a namespace, which the schema compiler has no location to ask for.
+            foreach (var root in roots.Select(closure.Map).Concat(closure.ImportedByNamespace).DistinctBy(u => u.AbsoluteUri))
             {
                 using var content = closure.Content(root)!;
                 using var xml = XmlReader.Create(content, settings, root.AbsoluteUri);
@@ -150,13 +152,34 @@ public static class SchemaCompiler
         public MemoryStream? Content(Uri uri)
             => _content.TryGetValue(uri.AbsoluteUri, out var bytes) ? new MemoryStream(bytes, writable: false) : null;
 
+        /// <summary>Documents the catalog gave for an import that names a namespace and no location.</summary>
+        public List<Uri> ImportedByNamespace { get; } = [];
+
+        /// <summary>Where the catalog says the document is read from; the URI itself when it says nothing.</summary>
+        public Uri Map(Uri uri) => _options.Catalog?.ResolveUri(uri.AbsoluteUri) ?? uri;
+
+        /// <summary>
+        /// The document a reference names: the catalog is asked about the location as it is
+        /// written, then about the absolute URI it resolves to against <paramref name="baseUri"/>.
+        /// Used for reading the closure and again by the schema compiler, so the two agree.
+        /// </summary>
+        public Uri? Resolve(Uri baseUri, string location)
+        {
+            if (_options.Catalog?.ResolveUri(location) is { } asWritten)
+                return asWritten;
+            return Uri.TryCreate(baseUri, location, out var target) ? Map(target) : null;
+        }
+
         public async ValueTask ReadAsync(Uri[] roots, CancellationToken cancellationToken)
         {
             var pending = new Queue<SchemaDocumentRequest>();
             var asked = new HashSet<string>(StringComparer.Ordinal);
             foreach (var root in roots)
-                if (asked.Add(root.AbsoluteUri))
-                    pending.Enqueue(new SchemaDocumentRequest(root, root.OriginalString, null));
+            {
+                var mapped = Map(root);
+                if (asked.Add(mapped.AbsoluteUri))
+                    pending.Enqueue(new SchemaDocumentRequest(mapped, root.OriginalString, null));
+            }
 
             while (pending.TryDequeue(out var request))
             {
@@ -173,16 +196,28 @@ public static class SchemaCompiler
                 // Checked as it was read; then, where it is written for XSD 1.1, as a 1.0 processor
                 // is to see it. The references are taken from that second form: an include that
                 // the document marks as 1.1-only is not part of this schema and is not fetched.
-                var locations = Check(bytes, request);
+                var references = Check(bytes, request);
                 if (_options.Xsd11Compatibility && Xsd11Compatibility.Apply(bytes) is var rewritten && !ReferenceEquals(rewritten, bytes))
                 {
                     bytes = rewritten;
-                    locations = Check(bytes, request);
+                    references = Check(bytes, request);
                 }
                 _content[request.Uri.AbsoluteUri] = bytes;
-                foreach (var location in locations)
+                foreach (var (location, importedNamespace) in references)
                 {
-                    if (!Uri.TryCreate(request.Uri, location, out var target))
+                    if (location is null)
+                    {
+                        // An import with a namespace and no location: the catalog may know one.
+                        if (_options.Catalog?.ResolveUri(importedNamespace!) is { } byNamespace)
+                        {
+                            if (!ImportedByNamespace.Any(u => u.AbsoluteUri == byNamespace.AbsoluteUri))
+                                ImportedByNamespace.Add(byNamespace);
+                            if (asked.Add(byNamespace.AbsoluteUri))
+                                pending.Enqueue(new SchemaDocumentRequest(byNamespace, importedNamespace!, request.Uri));
+                        }
+                        continue;
+                    }
+                    if (Resolve(request.Uri, location) is not { } target)
                     {
                         Errors.Add(new SchemaDiagnostic(SchemaSeverity.Error,
                             $"The schema location '{location}' is not a URI.", request.Uri.AbsoluteUri));
@@ -253,9 +288,9 @@ public static class SchemaCompiler
         /// refers to. A document that is not well-formed is left for the schema parser to report,
         /// with its own message and position.
         /// </summary>
-        private List<string> Check(byte[] document, SchemaDocumentRequest request)
+        private List<(string? Location, string? Namespace)> Check(byte[] document, SchemaDocumentRequest request)
         {
-            var locations = new List<string>();
+            var locations = new List<(string?, string?)>();
             // Parse, not Ignore: Ignore skips the declaration without reporting it. Nothing is
             // resolved and no entity is expanded, since reading stops at the declaration itself.
             var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Parse, XmlResolver = null };
@@ -282,9 +317,13 @@ public static class SchemaCompiler
                     }
                     // References are children of xs:schema.
                     if (xml.Depth == 1 && xml.NamespaceURI == XsdNamespace
-                        && xml.LocalName is "include" or "import" or "redefine"
-                        && xml.GetAttribute("schemaLocation") is { Length: > 0 } location)
-                        locations.Add(location);
+                        && xml.LocalName is "include" or "import" or "redefine")
+                    {
+                        if (xml.GetAttribute("schemaLocation") is { Length: > 0 } location)
+                            locations.Add((location, null));
+                        else if (xml.LocalName == "import" && xml.GetAttribute("namespace") is { Length: > 0 } importedNamespace)
+                            locations.Add((null, importedNamespace));
+                    }
                 }
             }
             catch (XmlException)
@@ -298,6 +337,14 @@ public static class SchemaCompiler
     private sealed class LoadedOnlyResolver(Closure closure) : XmlResolver
     {
         public List<SchemaDiagnostic> NotLoaded { get; } = [];
+
+        // The same resolution the closure was read by, catalog included, so that the schema
+        // compiler asks for a document under the name it was read under, and takes that name as
+        // the base for the references inside it.
+        public override Uri ResolveUri(Uri? baseUri, string? relativeUri)
+            => baseUri is not null && relativeUri is not null && closure.Resolve(baseUri, relativeUri) is { } resolved
+                ? resolved
+                : base.ResolveUri(baseUri, relativeUri);
 
         public override object? GetEntity(Uri absoluteUri, string? role, Type? ofObjectToReturn)
         {
