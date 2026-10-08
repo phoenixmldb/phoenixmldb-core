@@ -135,12 +135,16 @@ public static class SchemaValidator
         var patternTimedOut = false;
         var name = sourceUri?.AbsoluteUri;
 
-        void Report(SchemaSeverity severity, string message, int line, int column)
+        void Report(SchemaSeverity severity, string message, int line, int column, XmlSchemaException? reported = null,
+            string? rule = null)
         {
-            if (diagnostics.Count < options.MaxDiagnostics)
-                diagnostics.Add(new SchemaDiagnostic(severity, message, name, line, column));
-            else
+            if (diagnostics.Count >= options.MaxDiagnostics)
+            {
                 truncated = true;
+                return;
+            }
+            var (messageId, code) = reported is null ? (null, rule) : SchemaMessageIds.Of(reported);
+            diagnostics.Add(new SchemaDiagnostic(severity, message, name, line, column) { MessageId = messageId, Code = code });
         }
 
         var settings = new XmlReaderSettings
@@ -158,14 +162,17 @@ public static class SchemaValidator
         };
         settings.ValidationEventHandler += (_, e) => Report(
             e.Severity == XmlSeverityType.Warning ? SchemaSeverity.Warning : SchemaSeverity.Error,
-            e.Message, e.Exception.LineNumber, e.Exception.LinePosition);
+            e.Message, e.Exception.LineNumber, e.Exception.LinePosition, e.Exception);
 
         try
         {
             using var reader = open(settings);
             var sawRoot = false;
-            while (!truncated && reader.Read())
+            while (true)
             {
+                var reportedBefore = diagnostics.Count;
+                if (truncated || !reader.Read())
+                    break;
                 cancellationToken.ThrowIfCancellationRequested();
                 if (reader.NodeType != XmlNodeType.Element)
                     continue;
@@ -181,12 +188,15 @@ public static class SchemaValidator
                 if (!sawRoot)
                 {
                     sawRoot = true;
-                    if (options.RequireDeclaredRoot && reader.SchemaInfo?.SchemaElement is null)
+                    // Where the schema covers the element's namespace the processor has already
+                    // said so itself; one problem is reported once.
+                    if (options.RequireDeclaredRoot && reader.SchemaInfo?.SchemaElement is null
+                        && diagnostics.Count == reportedBefore)
                     {
                         var ns = reader.NamespaceURI.Length == 0 ? "no namespace" : $"namespace '{reader.NamespaceURI}'";
                         Report(SchemaSeverity.Error,
                             $"The schema has no declaration for the document element '{reader.LocalName}' in {ns}.",
-                            position?.LineNumber ?? 0, position?.LinePosition ?? 0);
+                            position?.LineNumber ?? 0, position?.LinePosition ?? 0, rule: "cvc-elt.1");
                     }
                 }
             }
