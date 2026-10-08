@@ -189,7 +189,7 @@ public sealed class SchemaCache
         var names = roots.Select(r => r.AbsoluteUri).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
         return string.Join("\n", names) + "\n\n" + gate.Identity + "\n"
             + string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                $"{options.MaxDocumentBytes}:{options.MaxTotalBytes}:{options.MaxDocuments}");
+                $"{options.MaxDocumentBytes}:{options.MaxTotalBytes}:{options.MaxDocuments}:{(options.Xsd11Compatibility ? 1 : 0)}");
     }
 
     private async Task<Entry> CompileEntryAsync(Uri[] roots, ISchemaAccessGate gate, SchemaSource[] sources,

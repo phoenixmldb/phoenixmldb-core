@@ -170,8 +170,17 @@ public static class SchemaCompiler
                 var bytes = await ReadOneAsync(request, cancellationToken).ConfigureAwait(false);
                 if (bytes is null)
                     continue;
+                // Checked as it was read; then, where it is written for XSD 1.1, as a 1.0 processor
+                // is to see it. The references are taken from that second form: an include that
+                // the document marks as 1.1-only is not part of this schema and is not fetched.
+                var locations = Check(bytes, request);
+                if (_options.Xsd11Compatibility && Xsd11Compatibility.Apply(bytes) is var rewritten && !ReferenceEquals(rewritten, bytes))
+                {
+                    bytes = rewritten;
+                    locations = Check(bytes, request);
+                }
                 _content[request.Uri.AbsoluteUri] = bytes;
-                foreach (var location in Check(bytes, request))
+                foreach (var location in locations)
                 {
                     if (!Uri.TryCreate(request.Uri, location, out var target))
                     {
