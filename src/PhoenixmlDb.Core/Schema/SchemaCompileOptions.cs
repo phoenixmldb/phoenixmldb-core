@@ -27,4 +27,13 @@ public sealed record SchemaCompileOptions
     /// With false such a schema fails to compile.
     /// </summary>
     public bool Xsd11Compatibility { get; init; } = true;
+
+    /// <summary>
+    /// A catalog that says where the documents a schema names are really read from. Null, the
+    /// default, for none. It is asked about each root, about each <c>schemaLocation</c> (as it is
+    /// written, then as the absolute URI it resolves to), and, for an <c>xs:import</c> that gives
+    /// no location, about the namespace. What it maps a name to is then read from a source or
+    /// through the gate like any other document.
+    /// </summary>
+    public XmlCatalog? Catalog { get; init; }
 }
