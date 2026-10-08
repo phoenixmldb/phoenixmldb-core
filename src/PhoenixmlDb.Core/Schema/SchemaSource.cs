@@ -17,9 +17,9 @@ namespace PhoenixmlDb.Core.Schema;
 /// </remarks>
 public sealed class SchemaSource
 {
-    private readonly Func<Stream> _open;
+    private readonly Func<CancellationToken, ValueTask<Stream>> _open;
 
-    private SchemaSource(Uri uri, Func<Stream> open, string version)
+    private SchemaSource(Uri uri, Func<CancellationToken, ValueTask<Stream>> open, string version)
     {
         Uri = uri;
         _open = open;
@@ -35,7 +35,7 @@ public sealed class SchemaSource
     /// </summary>
     public string Version { get; }
 
-    internal Stream Open() => _open();
+    internal ValueTask<Stream> OpenAsync(CancellationToken cancellationToken) => _open(cancellationToken);
 
     /// <summary>Schema text, named by <paramref name="uri"/>.</summary>
     /// <exception cref="ArgumentException"><paramref name="uri"/> is not absolute.</exception>
@@ -44,7 +44,7 @@ public sealed class SchemaSource
         ArgumentNullException.ThrowIfNull(schema);
         RequireAbsolute(uri);
         var bytes = Encoding.UTF8.GetBytes(schema);
-        return new SchemaSource(uri, () => new MemoryStream(bytes, writable: false),
+        return new SchemaSource(uri, _ => new ValueTask<Stream>(new MemoryStream(bytes, writable: false)),
             "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)));
     }
 
@@ -65,7 +65,7 @@ public sealed class SchemaSource
                 $"Assembly '{assembly.GetName().Name}' has no manifest resource '{resourceName}'.", nameof(resourceName)))
         {
             var hash = Convert.ToHexString(SHA256.HashData(probe));
-            return new SchemaSource(uri, () => assembly.GetManifestResourceStream(resourceName)!, "sha256:" + hash);
+            return new SchemaSource(uri, _ => new ValueTask<Stream>(assembly.GetManifestResourceStream(resourceName)!), "sha256:" + hash);
         }
     }
 
@@ -74,14 +74,18 @@ public sealed class SchemaSource
     /// <paramref name="uri"/>.
     /// </summary>
     /// <param name="uri">The absolute URI that names the document.</param>
-    /// <param name="open">Opens the content. Called once for each compilation that needs it.</param>
+    /// <param name="open">
+    /// Opens the content. Called once for each compilation that needs it, with that compilation's
+    /// cancellation token. An exception it throws reaches the caller of the compilation unchanged.
+    /// </param>
     /// <param name="version">
-    /// A token that changes whenever the content does, such as the stored schema's version id.
+    /// A token that changes whenever the content does, such as the stored schema's version id, or
+    /// a content hash for a store that keeps no versions.
     /// </param>
     /// <exception cref="ArgumentException">
     /// <paramref name="uri"/> is not absolute, or <paramref name="version"/> is empty.
     /// </exception>
-    public static SchemaSource FromStore(Uri uri, Func<Stream> open, string version)
+    public static SchemaSource FromStore(Uri uri, Func<CancellationToken, ValueTask<Stream>> open, string version)
     {
         ArgumentNullException.ThrowIfNull(open);
         ArgumentException.ThrowIfNullOrEmpty(version);
