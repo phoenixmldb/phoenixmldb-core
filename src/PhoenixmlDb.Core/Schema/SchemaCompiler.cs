@@ -53,13 +53,14 @@ public static class SchemaCompiler
             if (root is null || !root.IsAbsoluteUri)
                 throw new ArgumentException($"A root schema needs an absolute URI; '{root}' is not one.", nameof(roots));
 
-        var closure = new Closure(gate, sources, options ?? SchemaCompileOptions.Default);
+        var compileOptions = options ?? SchemaCompileOptions.Default;
+        var closure = new Closure(gate, sources, compileOptions);
         await closure.ReadAsync(rootList, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         var diagnostics = new List<SchemaDiagnostic>(closure.Errors);
         if (diagnostics.Count == 0)
-            Build(rootList, closure, diagnostics);
+            Build(rootList, closure, diagnostics, compileOptions.PatternMatchTimeout);
 
         var errors = diagnostics.Where(d => d.Severity == SchemaSeverity.Error).ToArray();
         if (errors.Length > 0)
@@ -67,7 +68,98 @@ public static class SchemaCompiler
                 "The schema could not be compiled: " + errors[0].Message
                 + (errors.Length > 1 ? $" (and {errors.Length - 1} more)" : ""),
                 diagnostics);
-        return new CompiledSchema(closure.Set!, rootList, closure.Documents, diagnostics, gate.Identity, closure.Requests);
+        return new CompiledSchema(closure.Set!, rootList, closure.Documents, diagnostics, gate.Identity, closure.Requests,
+            compileOptions.PatternMatchTimeout);
+    }
+
+    /// <summary>
+    /// The first step alone: reads the closure of <paramref name="roots"/> exactly as
+    /// <see cref="CompileAsync"/> does, and returns the documents for a caller that adds them to a
+    /// schema set of its own (the XQuery schema provider, whose set grows with each import).
+    /// </summary>
+    /// <exception cref="SchemaCompilationException">A document could not be read, or is not allowed.</exception>
+    internal static async ValueTask<LoadedSchemaDocuments> ReadAsync(IEnumerable<Uri> roots, ISchemaAccessGate gate,
+        IEnumerable<SchemaSource>? sources, SchemaCompileOptions? options, CancellationToken cancellationToken)
+    {
+        var rootList = roots.ToArray();
+        var closure = new Closure(gate, sources, options ?? SchemaCompileOptions.Default);
+        await closure.ReadAsync(rootList, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (closure.Errors.Count > 0)
+            throw new SchemaCompilationException(
+                closure.Errors[0].Message + (closure.Errors.Count > 1 ? $" (and {closure.Errors.Count - 1} more)" : ""),
+                closure.Errors);
+        return new LoadedSchemaDocuments(rootList, closure);
+    }
+
+    /// <inheritdoc cref="ReadAsync"/>
+    internal static LoadedSchemaDocuments Read(IEnumerable<Uri> roots, ISchemaAccessGate gate,
+        IEnumerable<SchemaSource>? sources = null, SchemaCompileOptions? options = null)
+    {
+        var pending = ReadAsync(roots, gate, sources, options, CancellationToken.None);
+        return pending.IsCompletedSuccessfully ? pending.Result : pending.AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <summary>The documents of one schema, read and checked, not yet in any schema set.</summary>
+    internal sealed class LoadedSchemaDocuments
+    {
+        private readonly Uri[] _roots;
+        private readonly Closure _closure;
+
+        internal LoadedSchemaDocuments(Uri[] roots, Closure closure)
+        {
+            _roots = roots;
+            _closure = closure;
+        }
+
+        /// <summary>Every document that was read, with the version read.</summary>
+        public IReadOnlyList<SchemaDocumentVersion> Documents => _closure.Documents;
+
+        /// <summary>
+        /// Adds the roots to <paramref name="set"/>, which takes what they refer to from the
+        /// documents read here and from nowhere else. The set is not compiled. Returns what the
+        /// set asked for and was not given; a schema document that does not parse throws as
+        /// <see cref="XmlSchemaSet.Add(string, XmlReader)"/> does.
+        /// </summary>
+        /// <param name="set">The set to add to.</param>
+        /// <param name="targetNamespace">
+        /// The namespace the roots must declare, or null to take each document's own.
+        /// </param>
+        public IReadOnlyList<SchemaDiagnostic> AddTo(XmlSchemaSet set, string? targetNamespace)
+        {
+            var resolver = new LoadedOnlyResolver(_closure);
+            set.XmlResolver = resolver;
+            try
+            {
+                AddRoots(set, _roots, _closure, targetNamespace);
+            }
+            finally
+            {
+                // Nothing is to be fetched after this, and the resolver holds every document's bytes.
+                set.XmlResolver = null;
+            }
+            return resolver.NotLoaded;
+        }
+    }
+
+    private static void AddRoots(XmlSchemaSet set, Uri[] roots, Closure closure, string? targetNamespace)
+    {
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        // The roots, where the catalog maps them to; then what the catalog gave for an import
+        // that names only a namespace, which the schema compiler has no location to ask for.
+        var mappedRoots = roots.Select(closure.Map).DistinctBy(u => u.AbsoluteUri).ToList();
+        foreach (var root in mappedRoots)
+        {
+            using var content = closure.Content(root)!;
+            using var xml = XmlReader.Create(content, settings, root.AbsoluteUri);
+            set.Add(targetNamespace, xml);
+        }
+        foreach (var imported in closure.ImportedByNamespace.Where(u => mappedRoots.TrueForAll(r => r.AbsoluteUri != u.AbsoluteUri)))
+        {
+            using var content = closure.Content(imported)!;
+            using var xml = XmlReader.Create(content, settings, imported.AbsoluteUri);
+            set.Add(null, xml);
+        }
     }
 
     /// <summary>
@@ -83,23 +175,34 @@ public static class SchemaCompiler
     }
 
     /// <summary>The second step: compile from the documents that were read, fetching nothing.</summary>
-    private static void Build(Uri[] roots, Closure closure, List<SchemaDiagnostic> diagnostics)
+    private static void Build(Uri[] roots, Closure closure, List<SchemaDiagnostic> diagnostics, TimeSpan? patternMatchTimeout)
     {
         var resolver = new LoadedOnlyResolver(closure);
         var set = new XmlSchemaSet { XmlResolver = resolver };
         set.ValidationEventHandler += (_, e) => diagnostics.Add(SchemaDiagnostic.From(e.Exception, e.Severity));
-        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
         try
         {
-            // The roots, where the catalog maps them to; then what the catalog gave for an import
-            // that names only a namespace, which the schema compiler has no location to ask for.
-            foreach (var root in roots.Select(closure.Map).Concat(closure.ImportedByNamespace).DistinctBy(u => u.AbsoluteUri))
+            AddRoots(set, roots, closure, targetNamespace: null);
+            if (patternMatchTimeout is { } limit)
             {
-                using var content = closure.Content(root)!;
-                using var xml = XmlReader.Create(content, settings, root.AbsoluteUri);
-                set.Add(null, xml);
+                // Compiling matches the schema's own values against its patterns, with no limit.
+                SchemaPatternGuard.CheckSchemaLiterals(set, limit, new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<string>(StringComparer.Ordinal));
+                set.Compile();
+                SchemaPatternGuard.Bound(set, limit);
             }
-            set.Compile();
+            else
+            {
+                set.Compile();
+            }
+        }
+        catch (SchemaCompilationException ex)
+        {
+            diagnostics.AddRange(ex.Diagnostics);
+        }
+        catch (NotSupportedException ex)
+        {
+            diagnostics.Add(new SchemaDiagnostic(SchemaSeverity.Error, ex.Message));
         }
         catch (XmlSchemaException ex)
         {
@@ -119,7 +222,7 @@ public static class SchemaCompiler
     }
 
     /// <summary>The first step: the documents of one compilation, each read once.</summary>
-    private sealed class Closure
+    internal sealed class Closure
     {
         private readonly ISchemaAccessGate _gate;
         private readonly SchemaCompileOptions _options;

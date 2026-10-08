@@ -39,8 +39,9 @@ public sealed record SchemaValidationOptions
 /// <summary>What a validation found.</summary>
 public sealed class SchemaValidationResult
 {
-    internal SchemaValidationResult(IReadOnlyList<SchemaDiagnostic> diagnostics, bool truncated)
+    internal SchemaValidationResult(IReadOnlyList<SchemaDiagnostic> diagnostics, bool truncated, bool patternTimedOut = false)
     {
+        PatternTimedOut = patternTimedOut;
         Diagnostics = diagnostics;
         Truncated = truncated;
         IsValid = !truncated && !diagnostics.Any(d => d.Severity == SchemaSeverity.Error);
@@ -59,6 +60,12 @@ public sealed class SchemaValidationResult
     /// What comes after that point was not looked at.
     /// </summary>
     public bool Truncated { get; }
+
+    /// <summary>
+    /// True when validation stopped because one match of a pattern facet ran past the schema's
+    /// <see cref="CompiledSchema.PatternMatchTimeout"/>. <see cref="Truncated"/> is then true too.
+    /// </summary>
+    public bool PatternTimedOut { get; }
 }
 
 /// <summary>
@@ -76,10 +83,11 @@ public sealed class SchemaValidationResult
 /// The schema validated against is the one passed in.
 /// </para>
 /// <para>
-/// <b>There is no time limit on a pattern facet here.</b> A schema whose <c>xs:pattern</c>
-/// backtracks catastrophically on a value takes as long as that value makes it. A host that
-/// validates against schemas or instances it does not trust has to bound that itself until the
-/// layer does.
+/// A match of a pattern facet takes no longer than the schema's
+/// <see cref="CompiledSchema.PatternMatchTimeout"/>. A schema compiled without one has no limit:
+/// a pattern that backtracks catastrophically on a value then takes as long as that value makes
+/// it. A host that validates against schemas or instances it does not trust sets
+/// <see cref="SchemaCompileOptions.PatternMatchTimeout"/>.
 /// </para>
 /// </remarks>
 public static class SchemaValidator
@@ -124,6 +132,7 @@ public static class SchemaValidator
     {
         var diagnostics = new List<SchemaDiagnostic>();
         var truncated = false;
+        var patternTimedOut = false;
         var name = sourceUri?.AbsoluteUri;
 
         void Report(SchemaSeverity severity, string message, int line, int column)
@@ -187,6 +196,14 @@ public static class SchemaValidator
             Report(SchemaSeverity.Error, ex.Message, ex.LineNumber, ex.LinePosition);
             truncated = true;
         }
-        return new SchemaValidationResult(diagnostics, truncated);
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
+        {
+            Report(SchemaSeverity.Error,
+                $"A pattern facet of the schema ran past the match time limit of {ex.MatchTimeout.TotalSeconds:0.###} s on a value of the document; validation stopped.",
+                0, 0);
+            truncated = true;
+            patternTimedOut = true;
+        }
+        return new SchemaValidationResult(diagnostics, truncated, patternTimedOut);
     }
 }
