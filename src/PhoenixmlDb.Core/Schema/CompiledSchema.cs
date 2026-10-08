@@ -16,8 +16,9 @@ public sealed class CompiledSchema
 {
     internal CompiledSchema(XmlSchemaSet schemaSet, IReadOnlyList<Uri> roots,
         IReadOnlyList<SchemaDocumentVersion> documents, IReadOnlyList<SchemaDiagnostic> warnings, string gateIdentity,
-        IReadOnlyDictionary<string, SchemaDocumentRequest> requests)
+        IReadOnlyDictionary<string, SchemaDocumentRequest> requests, TimeSpan? patternMatchTimeout = null)
     {
+        PatternMatchTimeout = patternMatchTimeout;
         Requests = requests;
         SchemaSet = schemaSet;
         Roots = roots;
@@ -51,4 +52,10 @@ public sealed class CompiledSchema
 
     /// <summary>The <see cref="ISchemaAccessGate.Identity"/> of the gate its documents were read through.</summary>
     public string GateIdentity { get; }
+
+    /// <summary>
+    /// The <see cref="SchemaCompileOptions.PatternMatchTimeout"/> the schema was compiled with:
+    /// the most time one match of a pattern facet takes in a validation against it. Null for none.
+    /// </summary>
+    public TimeSpan? PatternMatchTimeout { get; }
 }

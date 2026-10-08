@@ -36,4 +36,31 @@ public sealed record SchemaCompileOptions
     /// through the gate like any other document.
     /// </summary>
     public XmlCatalog? Catalog { get; init; }
+
+    /// <summary>
+    /// The most time one match of an <c>xs:pattern</c> facet may take: while the schema compiles
+    /// (which matches the schema's own enumeration, default and fixed values against its
+    /// patterns) and in every validation against the compiled schema. Null, the default, sets no
+    /// limit of the layer's own and leaves .NET's process-wide default, which is infinite unless
+    /// the host sets it.
+    /// </summary>
+    /// <remarks>
+    /// A host that compiles schemas it did not write, or validates values it did not write against
+    /// patterns that may backtrack, should set this. A schema whose own values run past the limit
+    /// does not compile. The schema processor keeps its compiled expressions in private state;
+    /// on a runtime where they cannot be reached, a schema that declares a pattern does not
+    /// compile with a limit set, instead of being left unbounded.
+    /// </remarks>
+    public TimeSpan? PatternMatchTimeout
+    {
+        get => _patternMatchTimeout;
+        init
+        {
+            if (value is { } limit && limit <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), "The match timeout must be positive.");
+            _patternMatchTimeout = value;
+        }
+    }
+
+    private readonly TimeSpan? _patternMatchTimeout;
 }
