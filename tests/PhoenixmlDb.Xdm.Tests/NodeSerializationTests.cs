@@ -38,7 +38,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(doc, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(doc.Id, doc.Document) as XdmDocument;
 
         result.Should().NotBeNull();
@@ -62,7 +62,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(doc, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(doc.Id, doc.Document) as XdmDocument;
 
         result!.DocumentUri.Should().Be("file:///test/document.xml");
@@ -82,7 +82,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(doc, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(doc.Id, doc.Document) as XdmDocument;
 
         result!.Children.Should().BeEquivalentTo(children);
@@ -121,7 +121,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result.Should().NotBeNull();
@@ -148,7 +148,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Namespace.Should().Be(NamespaceId.Xsd);
@@ -173,7 +173,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Parent.Should().Be(new NodeId(100));
@@ -196,7 +196,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Attributes.Should().BeEquivalentTo(attrs);
@@ -219,7 +219,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Children.Should().BeEquivalentTo(children);
@@ -245,7 +245,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.NamespaceDeclarations.Should().HaveCount(2);
@@ -273,7 +273,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Namespace.Should().Be(NamespaceId.Xsd);
@@ -314,7 +314,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(attr, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(attr.Id, attr.Document) as XdmAttribute;
 
         result.Should().NotBeNull();
@@ -340,7 +340,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(attr, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(attr.Id, attr.Document) as XdmAttribute;
 
         result!.Namespace.Should().Be(NamespaceId.Xml);
@@ -364,7 +364,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(attr, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(attr.Id, attr.Document) as XdmAttribute;
 
         result!.Parent.Should().Be(new NodeId(50));
@@ -388,7 +388,7 @@ public class NodeSerializationTests
         var buffer = new byte[4096];
 
         var bytesWritten = NodeSerializer.Serialize(attr, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(attr.Id, attr.Document) as XdmAttribute;
 
         result!.Value.Should().Be(value);
@@ -422,7 +422,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(text, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(text.Id, text.Document) as XdmText;
 
         result.Should().NotBeNull();
@@ -442,7 +442,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(text, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(text.Id, text.Document) as XdmText;
 
         result!.Parent.Should().BeNull();
@@ -467,7 +467,7 @@ public class NodeSerializationTests
         var buffer = new byte[4096];
 
         var bytesWritten = NodeSerializer.Serialize(text, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(text.Id, text.Document) as XdmText;
 
         result!.Value.Should().Be(value);
@@ -501,7 +501,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(comment, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(comment.Id, comment.Document) as XdmComment;
 
         result.Should().NotBeNull();
@@ -525,7 +525,7 @@ public class NodeSerializationTests
         var buffer = new byte[4096];
 
         var bytesWritten = NodeSerializer.Serialize(comment, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(comment.Id, comment.Document) as XdmComment;
 
         result!.Value.Should().Be(value);
@@ -560,7 +560,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(pi, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(pi.Id, pi.Document) as XdmProcessingInstruction;
 
         result.Should().NotBeNull();
@@ -585,7 +585,7 @@ public class NodeSerializationTests
         var buffer = new byte[4096];
 
         var bytesWritten = NodeSerializer.Serialize(pi, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(pi.Id, pi.Document) as XdmProcessingInstruction;
 
         result!.Target.Should().Be(target);
@@ -621,7 +621,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(ns, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(ns.Id, ns.Document) as XdmNamespace;
 
         result.Should().NotBeNull();
@@ -643,7 +643,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
 
         var bytesWritten = NodeSerializer.Serialize(ns, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(ns.Id, ns.Document) as XdmNamespace;
 
         result!.Prefix.Should().BeEmpty();
@@ -824,7 +824,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
         NodeSerializer.Serialize(doc, buffer);
 
-        var reader = new NodeReader(buffer);
+        var reader = NodeReader.WithoutStringValueResolver(buffer);
         var kind = reader.PeekNodeKind();
 
         kind.Should().Be(XdmNodeKind.Document);
@@ -837,7 +837,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
         NodeSerializer.Serialize(element, buffer);
 
-        var reader = new NodeReader(buffer);
+        var reader = NodeReader.WithoutStringValueResolver(buffer);
         var kind = reader.PeekNodeKind();
 
         kind.Should().Be(XdmNodeKind.Element);
@@ -850,7 +850,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
         NodeSerializer.Serialize(element, buffer);
 
-        var reader = new NodeReader(buffer);
+        var reader = NodeReader.WithoutStringValueResolver(buffer);
         _ = reader.PeekNodeKind();
         var positionAfterPeek = reader.Position;
 
@@ -868,7 +868,7 @@ public class NodeSerializationTests
         var buffer = new byte[1024];
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
 
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         _ = reader.Read(element.Id, element.Document);
 
         reader.Position.Should().Be(bytesWritten);
@@ -901,7 +901,7 @@ public class NodeSerializationTests
         var buffer = new byte[4096];
 
         var bytesWritten = NodeSerializer.Serialize(element, buffer);
-        var reader = new NodeReader(buffer.AsSpan(0, bytesWritten));
+        var reader = NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, bytesWritten));
         var result = reader.Read(element.Id, element.Document) as XdmElement;
 
         result!.Id.Should().Be(new NodeId(nodeIdValue));
@@ -917,11 +917,11 @@ public class NodeSerializationTests
     public void Read_UnknownNodeKind_ThrowsInvalidDataException()
     {
         var buffer = new byte[] { 255, 0 }; // Unknown node kind
-        var reader = new NodeReader(buffer);
+        var reader = NodeReader.WithoutStringValueResolver(buffer);
 
         Assert.Throws<InvalidDataException>(() =>
         {
-            var r = new NodeReader(buffer);
+            var r = NodeReader.WithoutStringValueResolver(buffer);
             r.Read(TestNodeId, TestDocId);
         });
     }

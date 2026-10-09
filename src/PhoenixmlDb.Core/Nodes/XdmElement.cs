@@ -133,12 +133,10 @@ public sealed class XdmElement : XdmNode
     /// A node reconstructed from storage cannot — its children resolve lazily — so it carries a
     /// <see cref="XdmNode.StringValueResolver"/>, which is invoked here on first read and cached.
     /// <para>
-    /// With NEITHER a computed value nor a resolver this still returns <see cref="string.Empty"/>,
-    /// which is indistinguishable from a genuinely empty element. That ambiguity is the defect
-    /// behind phoenixmldb/phoenixmldb-core#4: it made a storage-backed node atomize to "" on the
-    /// implicit-atomization paths while fn:string() on the same node returned its text. Supplying
-    /// a resolver is what removes it; raising instead of returning "" is tracked separately on
-    /// that issue, because it changes behaviour every consumer can observe.
+    /// A node with no children needs neither: its value is the empty string. A node with
+    /// children and NEITHER a computed value nor a resolver has a value nobody can read, and
+    /// reading it throws (<see cref="XdmNode.StrictStringValue"/>); it used to read as the empty
+    /// string, indistinguishable from a genuinely empty node (phoenixmldb/phoenixmldb-core#4).
     /// </para>
     /// </remarks>
     public override string StringValue =>

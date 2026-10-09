@@ -175,7 +175,7 @@ public class StringValueResolverTests
 
         // The single-argument constructor must keep behaving exactly as before, so every
         // existing caller is unaffected by the new overload.
-        var reader = new PhoenixmlDb.Xdm.Serialization.NodeReader(buffer.AsSpan(0, written));
+        var reader = PhoenixmlDb.Xdm.Serialization.NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, written));
         var result = reader.Read(source.Id, source.Document) as XdmElement;
 
         result!.StringValue.Should().BeEmpty();
@@ -311,6 +311,51 @@ public class StringValueResolverTests
             Childless(_ => "from the resolver").StringValue.Should().Be("from the resolver");
         }
         finally { XdmNode.StrictStringValue = saved; }
+    }
+
+    /// <summary>
+    /// Strict is the default: it is on with no switch at all, and only a switch that says off
+    /// turns it off. (Through 2.3 it was off unless the switch said on.)
+    /// </summary>
+    [Fact]
+    public void Strict_IsOnUnlessTheSwitchSaysOff()
+    {
+        AppContext.TryGetSwitch(XdmNode.StrictStringValueSwitchName, out _).Should().BeFalse(
+            "this assembly sets the property, not the switch; the test needs the switch unset");
+        try
+        {
+            XdmNode.StrictStringValueFromSwitch().Should().BeTrue("no switch means strict");
+            AppContext.SetSwitch(XdmNode.StrictStringValueSwitchName, false);
+            XdmNode.StrictStringValueFromSwitch().Should().BeFalse();
+        }
+        finally
+        {
+            AppContext.SetSwitch(XdmNode.StrictStringValueSwitchName, true);
+        }
+        XdmNode.StrictStringValueFromSwitch().Should().BeTrue();
+    }
+
+    /// <summary>A reader is given a resolver, or is asked by name for none.</summary>
+    [Fact]
+    public void NodeReader_RefusesANullResolver()
+    {
+        var act = () => { _ = new PhoenixmlDb.Xdm.Serialization.NodeReader(new byte[4], null!); };
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void NodeReader_WithoutAResolver_AnElementWithChildrenThrowsOnItsStringValue()
+    {
+        var source = StorageBackedElement(null);
+        var buffer = new byte[1024];
+        var written = PhoenixmlDb.Xdm.Serialization.NodeSerializer.Serialize(source, buffer);
+        var reader = PhoenixmlDb.Xdm.Serialization.NodeReader.WithoutStringValueResolver(buffer.AsSpan(0, written));
+        var result = (XdmElement)reader.Read(source.Id, source.Document)!;
+
+        result.LocalName.Should().Be("price", "everything but the string value is there");
+        var act = () => result.StringValue;
+        act.Should().Throw<InvalidOperationException>().WithMessage("*never computed*");
     }
 
     [Fact]

@@ -16,11 +16,6 @@ public ref struct NodeReader
     private int _position;
     private readonly XdmNode.XdmStringValueResolver? _stringValueResolver;
 
-    public NodeReader(ReadOnlySpan<byte> buffer)
-        : this(buffer, null)
-    {
-    }
-
     /// <summary>
     /// Creates a reader that stamps <paramref name="stringValueResolver"/> onto every element and
     /// document node it builds.
@@ -29,9 +24,10 @@ public ref struct NodeReader
     /// <param name="stringValueResolver">
     /// Computes a node's string value on first read. Deserialized nodes carry child
     /// <see cref="NodeId"/>s rather than child nodes, so their string value cannot be computed
-    /// here — only a caller holding the store can walk the subtree. Without a resolver such a
-    /// node reports the empty string, which is indistinguishable from a genuinely empty element
-    /// (phoenixmldb/phoenixmldb-core#4).
+    /// here — only a caller holding the store can walk the subtree. It must read the same
+    /// snapshot of the store as <paramref name="buffer"/> came from. There is no constructor
+    /// without it: a node read with no resolver reported the empty string, which is
+    /// indistinguishable from a genuinely empty element (phoenixmldb/phoenixmldb-core#4).
     /// </param>
     /// <remarks>
     /// This overload exists because the storage layer never constructs
@@ -41,12 +37,30 @@ public ref struct NodeReader
     /// produces, so a caller supplies ONE resolver closing over its read transaction rather than
     /// a closure per node.
     /// </remarks>
-    public NodeReader(ReadOnlySpan<byte> buffer, XdmNode.XdmStringValueResolver? stringValueResolver)
+    public NodeReader(ReadOnlySpan<byte> buffer, XdmNode.XdmStringValueResolver stringValueResolver)
     {
+        ArgumentNullException.ThrowIfNull(stringValueResolver);
         _buffer = buffer;
         _position = 0;
         _stringValueResolver = stringValueResolver;
     }
+
+    private NodeReader(ReadOnlySpan<byte> buffer)
+    {
+        _buffer = buffer;
+        _position = 0;
+        _stringValueResolver = null;
+    }
+
+    /// <summary>
+    /// Creates a reader whose element and document nodes get no resolver. Such a node cannot
+    /// report its string value unless it has no children: reading it throws (or, with
+    /// <see cref="XdmNode.StrictStringValue"/> switched off, gives the empty string whatever the
+    /// node holds). For a caller that never reads string values (a test of the serialized form,
+    /// a tool that reads names and structure only), and named so that nobody takes it by default.
+    /// </summary>
+    /// <param name="buffer">The serialized node data.</param>
+    public static NodeReader WithoutStringValueResolver(ReadOnlySpan<byte> buffer) => new(buffer);
 
     /// <summary>
     /// Current position in the buffer.
