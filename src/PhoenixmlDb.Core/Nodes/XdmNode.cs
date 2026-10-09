@@ -201,32 +201,31 @@ public abstract class XdmNode
     /// </summary>
     public const string StrictStringValueSwitchName = "PhoenixmlDb.Xdm.StrictStringValue";
 
-    private static bool s_strictStringValue =
-        AppContext.TryGetSwitch(StrictStringValueSwitchName, out var enabled) && enabled;
+    private static bool s_strictStringValue = StrictStringValueFromSwitch();
+
+    /// <summary>What the AppContext switch says now: on, unless it is set and says off.</summary>
+    internal static bool StrictStringValueFromSwitch() =>
+        !AppContext.TryGetSwitch(StrictStringValueSwitchName, out var enabled) || enabled;
 
     /// <summary>
-    /// When enabled, reading <see cref="StringValue"/> on an element or document that has NEITHER
-    /// a computed value NOR a <see cref="StringValueResolver"/> throws instead of returning the
-    /// empty string. Off by default.
+    /// When enabled, which is the default, reading <see cref="StringValue"/> on an element or
+    /// document that has children but NEITHER a computed value NOR a
+    /// <see cref="StringValueResolver"/> throws instead of returning the empty string.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The default exists to keep behaviour unchanged for every consumer of this package. The
-    /// switch exists because that default is the defect: "not computed yet" and "genuinely empty"
-    /// are the same observable value, so a node that never had its value computed atomizes to
-    /// <c>""</c> and no caller can tell. That is how storage-backed aggregates came to return
-    /// wrong answers with no error raised (phoenixmldb/phoenixmldb-core#4).
+    /// Such a node has a string value, the text below it; what is missing is any way to read it.
+    /// The empty string for it is a wrong answer that looks like a right one: "not computed" and
+    /// "genuinely empty" are the same observable value, so the node atomizes to <c>""</c> and no
+    /// caller can tell. That is how queries over stored documents came to match nothing and to
+    /// sum to nothing with no error raised (phoenixmldb/phoenixmldb-core#4). It is a defect of
+    /// whatever built the node, and it is reported as one.
     /// </para>
     /// <para>
-    /// Turn it on wherever a wrong answer is worse than a crash — engine test suites, conformance
-    /// runs, CI. A strict mode nobody enables catches nothing, so enabling it is the point rather
-    /// than an option: the suites that run it are what convert this class of defect from a silent
-    /// wrong number into a failing test.
-    /// </para>
-    /// <para>
-    /// Settable in code, or without recompiling via the AppContext switch
-    /// <c>PhoenixmlDb.Xdm.StrictStringValue</c> — in a <c>runtimeconfig.template.json</c>:
-    /// <code>{ "configProperties": { "PhoenixmlDb.Xdm.StrictStringValue": true } }</code>
+    /// It was off by default through 2.3. A host that meets the exception and cannot fix the
+    /// cause at once can switch it off, in code, or without recompiling via the AppContext
+    /// switch <c>PhoenixmlDb.Xdm.StrictStringValue</c> — in a <c>runtimeconfig.template.json</c>:
+    /// <code>{ "configProperties": { "PhoenixmlDb.Xdm.StrictStringValue": false } }</code>
     /// The switch is read once at type initialization; the property is authoritative afterwards.
     /// </para>
     /// </remarks>
@@ -247,9 +246,9 @@ public abstract class XdmNode
                 $"The string value of this {node.NodeKind} node was never computed and no "
                 + $"{nameof(StringValueResolver)} was supplied, so it cannot be determined. "
                 + "Returning the empty string here would be indistinguishable from a genuinely "
-                + "empty node. A node reconstructed from storage must be given a resolver — see "
-                + $"the NodeReader overload that takes one. To restore the previous "
-                + $"behaviour, set {nameof(XdmNode)}.{nameof(StrictStringValue)} to false.")
+                + "empty node. A node reconstructed from storage must be given a resolver "
+                + "(NodeReader takes one), and a node built in memory its value. To get the "
+                + $"empty string instead, set {nameof(XdmNode)}.{nameof(StrictStringValue)} to false.")
             : string.Empty;
 
     /// <summary>
