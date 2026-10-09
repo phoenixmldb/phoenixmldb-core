@@ -1,5 +1,25 @@
 # Release History
 
+## 2.4.0 — 2026-10-09
+
+**Breaking**, for code that builds `NodeReader` or reads string values of stored nodes directly.
+PhoenixmlDb.XQuery and PhoenixmlDb.Xslt are unaffected.
+
+- **BREAKING: `new NodeReader(buffer)` is removed.** A reader takes a `StringValueResolver`, or
+  the caller uses `NodeReader.WithoutStringValueResolver(buffer)` to state that it has none.
+- **BREAKING: `XdmNode.StrictStringValue` is on by default.** Reading the string value of a node
+  that has children, no computed value and no resolver throws `InvalidOperationException`
+  instead of returning `""`, which made string comparisons in cross-document queries silently
+  wrong (#4). The AppContext switch `PhoenixmlDb.Xdm.StrictStringValue` = `false` restores the old
+  behaviour.
+- A node with no children and no resolver has the empty string value.
+- **A schema that requires XSD 1.1 says so.** A schema whose `xs:schema` has
+  `vc:minVersion="1.1"`, or that uses `xs:assert`, `xs:assertion`, `xs:alternative`,
+  `xs:openContent`, `xs:defaultOpenContent` or `xs:override` outside a `vc:` guard, fails with a
+  message that names the document and the constructs (for example "xs:assert (71)"), instead of
+  "Root element is missing" or System.Xml's generic error. The processor implements XSD 1.0; no
+  schema that loaded before stops loading.
+
 ## 2.3.0 — 2026-10-08
 
 Minor because it adds API. Nothing changes for existing callers.
