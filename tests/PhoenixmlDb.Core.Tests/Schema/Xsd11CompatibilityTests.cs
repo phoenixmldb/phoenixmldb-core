@@ -177,4 +177,67 @@ public sealed class Xsd11CompatibilityTests
         var off = await cache.GetAsync([RootUri], SchemaAccessGate.SuppliedOnly, sources, Off);
         off.Should().NotBeSameAs(on);
     }
+
+    // ── a schema that cannot be read as XSD 1.0 at all ──
+
+    /// <summary>
+    /// The W3C schema for XSLT 3.0 is written this way. With the root gone nothing is left, and
+    /// the schema parser said "Root element is missing".
+    /// </summary>
+    [Fact]
+    public void A_schema_whose_root_is_marked_for_1_1_says_that_it_requires_1_1()
+    {
+        const string schema = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
+                       targetNamespace="urn:v" vc:minVersion="1.1">
+              <xs:element name="e" type="xs:string"/>
+            </xs:schema>
+            """;
+
+        FluentActions.Invoking(() => Compile(schema)).Should().Throw<SchemaCompilationException>()
+            .WithMessage("*mem://test/vc/main.xsd*requires XSD 1.1*vc:minVersion=\"1.1\"*XSD 1.0*");
+    }
+
+    [Theory]
+    [InlineData("""<xs:complexType name="t"><xs:attribute name="a" type="xs:integer"/><xs:assert test="@a gt 0"/></xs:complexType>""", "xs:assert (1)")]
+    [InlineData("""<xs:simpleType name="t"><xs:restriction base="xs:integer"><xs:assertion test="$value gt 0"/></xs:restriction></xs:simpleType>""", "xs:assertion (1)")]
+    [InlineData("""<xs:element name="e" type="xs:string"><xs:alternative test="@k = 1" type="xs:integer"/></xs:element>""", "xs:alternative (1)")]
+    [InlineData("""<xs:complexType name="t"><xs:openContent><xs:any/></xs:openContent><xs:sequence/></xs:complexType>""", "xs:openContent (1)")]
+    [InlineData("""<xs:override schemaLocation="part.xsd"/>""", "xs:override (1)")]
+    public void A_1_1_construct_with_no_guard_is_named(string body, string named)
+        => FluentActions.Invoking(() => Compile(Schema(body))).Should().Throw<SchemaCompilationException>()
+            .WithMessage($"*requires XSD 1.1*{named}*no vc:minVersion guard*");
+
+    [Fact]
+    public void The_message_counts_each_construct()
+        => FluentActions.Invoking(() => Compile(Schema("""
+            <xs:complexType name="a"><xs:assert test="true()"/><xs:assert test="true()"/></xs:complexType>
+            <xs:complexType name="b"><xs:openContent><xs:any/></xs:openContent><xs:sequence/></xs:complexType>
+            """))).Should().Throw<SchemaCompilationException>().WithMessage("*xs:assert (2), xs:openContent (1)*");
+
+    /// <summary>A word of the 1.1 vocabulary in text or in a name is not a construct.</summary>
+    [Fact]
+    public void A_schema_that_only_mentions_such_a_name_loads()
+    {
+        var schema = Compile(Schema("""
+            <xs:element name="assert" type="xs:string">
+              <xs:annotation><xs:documentation>An override of the alternative, see openContent.</xs:documentation></xs:annotation>
+            </xs:element>
+            """));
+
+        Valid(schema, "<assert xmlns='urn:v'>x</assert>").Should().BeTrue();
+    }
+
+    [Fact]
+    public void An_included_document_that_requires_1_1_is_the_one_named()
+    {
+        const string part = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:v">
+              <xs:complexType name="t"><xs:assert test="true()"/></xs:complexType>
+            </xs:schema>
+            """;
+
+        FluentActions.Invoking(() => Compile(Schema("""<xs:include schemaLocation="part.xsd"/>"""), null, SchemaSource.FromText(part, PartUri)))
+            .Should().Throw<SchemaCompilationException>().WithMessage("*mem://test/vc/part.xsd*requires XSD 1.1*xs:assert (1)*");
+    }
 }
