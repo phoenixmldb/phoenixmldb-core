@@ -300,10 +300,24 @@ public static class SchemaCompiler
                 // is to see it. The references are taken from that second form: an include that
                 // the document marks as 1.1-only is not part of this schema and is not fetched.
                 var references = Check(bytes, request);
-                if (_options.Xsd11Compatibility && Xsd11Compatibility.Apply(bytes) is var rewritten && !ReferenceEquals(rewritten, bytes))
+                if (_options.Xsd11Compatibility)
                 {
-                    bytes = rewritten;
-                    references = Check(bytes, request);
+                    var rewritten = Xsd11Compatibility.Apply(bytes, out var requiresXsd11);
+                    if (requiresXsd11 is not null)
+                    {
+                        // Said here, in these words: the schema parser would report a missing
+                        // root element, or an element "not supported in this context".
+                        Errors.Add(new SchemaDiagnostic(SchemaSeverity.Error,
+                            $"The schema document '{request.Uri.AbsoluteUri}' requires XSD 1.1: {requiresXsd11}. "
+                            + "This processor implements XSD 1.0 and reads only the parts of a schema that are marked for it.",
+                            request.Uri.AbsoluteUri));
+                        continue;
+                    }
+                    if (!ReferenceEquals(rewritten, bytes))
+                    {
+                        bytes = rewritten;
+                        references = Check(bytes, request);
+                    }
                 }
                 _content[request.Uri.AbsoluteUri] = bytes;
                 foreach (var (location, importedNamespace) in references)

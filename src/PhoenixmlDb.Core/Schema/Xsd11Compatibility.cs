@@ -40,8 +40,17 @@ internal static class Xsd11Compatibility
         ["dateTimeStamp"] = "dateTime",
     };
 
+    /// <summary>
+    /// Elements only XSD 1.1 has. A schema that uses one without a <c>vc:</c> guard cannot be
+    /// read as XSD 1.0: there is no 1.0 schema to fall back to.
+    /// </summary>
+    private static readonly HashSet<string> Xsd11Elements = new(StringComparer.Ordinal)
+    {
+        "assert", "assertion", "alternative", "openContent", "defaultOpenContent", "override",
+    };
+
     private static readonly byte[][] Markers =
-        [.. new[] { VcNamespace }.Concat(Xsd11BuiltIns.Keys).Select(System.Text.Encoding.ASCII.GetBytes)];
+        [.. new[] { VcNamespace }.Concat(Xsd11BuiltIns.Keys).Concat(Xsd11Elements).Select(System.Text.Encoding.ASCII.GetBytes)];
 
     /// <summary>
     /// The document as a 1.0 processor is to see it, or the same array when nothing in it needs
@@ -49,8 +58,15 @@ internal static class Xsd11Compatibility
     /// to report.
     /// </summary>
     /// <param name="document">A schema document already checked for a document type declaration and for depth.</param>
-    public static byte[] Apply(byte[] document)
+    /// <param name="requiresXsd11">
+    /// Why the document cannot be a schema for a 1.0 processor at all, or null: its
+    /// <c>xs:schema</c> element excludes itself from version 1.0, or it uses an element only
+    /// XSD 1.1 has outside any <c>vc:</c> guard. Such a document is not to be given to the
+    /// schema parser, whose message would not say this.
+    /// </param>
+    public static byte[] Apply(byte[] document, out string? requiresXsd11)
     {
+        requiresXsd11 = null;
         if (!MayNeedRewriting(document))
             return document;
         XDocument doc;
@@ -90,14 +106,35 @@ internal static class Xsd11Compatibility
         {
             if (element.Parent is null && element != doc.Root)
                 continue; // already removed with an ancestor
-            if (element == doc.Root)
-                continue; // a schema that excludes itself is the schema parser's to report
             if (Version(element.Attribute(minName)) is { } min && min > ProcessorVersion
                 || Version(element.Attribute(maxName)) is { } max && max <= ProcessorVersion)
             {
+                if (element == doc.Root)
+                {
+                    // Nothing of the document is a schema for version 1.0.
+                    if (element.Name == XName.Get("schema", XsdNamespace))
+                        requiresXsd11 = element.Attribute(minName) is { } rootMin && Version(rootMin) > ProcessorVersion
+                            ? $"its xs:schema element has vc:minVersion=\"{rootMin.Value.Trim()}\""
+                            : $"its xs:schema element has vc:maxVersion=\"{element.Attribute(maxName)!.Value.Trim()}\"";
+                    return document;
+                }
                 element.Remove();
                 changed = true;
             }
+        }
+
+        // What is left is what a 1.0 processor is to read. An element only 1.1 has, left in it,
+        // was written without a guard.
+        var unguarded = doc.Descendants()
+            .Where(e => e.Name.Namespace == XsdNamespace && Xsd11Elements.Contains(e.Name.LocalName))
+            .GroupBy(e => e.Name.LocalName, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => $"xs:{g.Key} ({g.Count().ToString(CultureInfo.InvariantCulture)})")
+            .ToList();
+        if (unguarded.Count > 0)
+        {
+            requiresXsd11 = "it uses " + string.Join(", ", unguarded) + " with no vc:minVersion guard";
+            return document;
         }
         if (!changed)
             return document;
