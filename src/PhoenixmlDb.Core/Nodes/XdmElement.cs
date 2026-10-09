@@ -142,7 +142,10 @@ public sealed class XdmElement : XdmNode
     /// </para>
     /// </remarks>
     public override string StringValue =>
-        _stringValue ??= StringValueResolver?.Invoke(this) ?? UnresolvedStringValue(this);
+        // A resolver decides where there is one. Without one, a node with no children still has
+        // a known value: there is no text below it, so it is the empty string.
+        _stringValue ??= StringValueResolver?.Invoke(this)
+            ?? (Children.Count == 0 ? string.Empty : UnresolvedStringValue(this));
 
     /// <summary>
     /// Internal backing field for the lazily-computed string value.

@@ -281,6 +281,38 @@ public class StringValueResolverTests
         finally { XdmNode.StrictStringValue = saved; }
     }
 
+    /// <summary>
+    /// A node with no children has no text below it, so its string value is known to be empty:
+    /// nothing was left uncomputed, and strict mode has nothing to report. A resolver, where
+    /// there is one, still decides.
+    /// </summary>
+    [Fact]
+    public void Strict_On_AChildlessElementOrDocument_IsEmpty()
+    {
+        XdmElement Childless(XdmNode.XdmStringValueResolver? resolver) => new()
+        {
+            Id = ElemId,
+            Document = DocumentId.None,
+            Namespace = NamespaceId.None,
+            LocalName = "empty",
+            Attributes = XdmElement.EmptyAttributes,
+            Children = XdmElement.EmptyChildren,
+            NamespaceDeclarations = ImmutableArray<NamespaceBinding>.Empty,
+            StringValueResolver = resolver,
+        };
+        var document = new XdmDocument { Id = DocId, Document = DocumentId.None, Children = ImmutableArray<NodeId>.Empty };
+        var saved = XdmNode.StrictStringValue;
+        try
+        {
+            XdmNode.StrictStringValue = true;
+
+            Childless(null).StringValue.Should().BeEmpty();
+            document.StringValue.Should().BeEmpty();
+            Childless(_ => "from the resolver").StringValue.Should().Be("from the resolver");
+        }
+        finally { XdmNode.StrictStringValue = saved; }
+    }
+
     [Fact]
     public void Strict_On_ResolvedElement_DoesNotThrow()
     {
