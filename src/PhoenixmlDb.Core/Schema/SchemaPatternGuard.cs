@@ -258,6 +258,51 @@ internal static class SchemaPatternGuard
     /// import and redefine, and — once compiled — the types, elements and attributes the
     /// compilation resolved, anonymous ones included.
     /// </summary>
+    // One character as XML Schema counts it: a code point. A .NET expression counts UTF-16 units,
+    // so "." took a character outside the Basic Multilingual Plane for two.
+    private const string AnyCharacter = @"(?:[^\n\r\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])";
+
+    /// <summary>
+    /// Makes "." in every pattern facet of a schema set that is not yet compiled match one
+    /// character, as XML Schema defines it, where System.Xml would match one UTF-16 unit: the
+    /// pattern "." refused a value of one character outside the Basic Multilingual Plane. Call it
+    /// before the set is compiled. A pattern it has changed holds no "." of that kind, so a
+    /// second call changes nothing.
+    /// </summary>
+    public static void MatchWholeCharacters(XmlSchemaSet set)
+    {
+        foreach (var obj in Walk(set))
+        {
+            if (obj is XmlSchemaPatternFacet { Value: { } pattern } facet && pattern.Contains('.', StringComparison.Ordinal))
+                facet.Value = WithWholeCharacters(pattern);
+        }
+    }
+
+    /// <summary>The pattern with each "." that stands for any character replaced; one that is escaped, or inside a character class, is a full stop and stays.</summary>
+    internal static string WithWholeCharacters(string pattern)
+    {
+        var result = new StringBuilder(pattern.Length + 16);
+        var classDepth = 0;
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            var c = pattern[i];
+            if (c == '\\' && i + 1 < pattern.Length)
+            {
+                result.Append(c).Append(pattern[++i]);
+                continue;
+            }
+            if (c == '[')
+                classDepth++;
+            else if (c == ']' && classDepth > 0)
+                classDepth--;
+            if (c == '.' && classDepth == 0)
+                result.Append(AnyCharacter);
+            else
+                result.Append(c);
+        }
+        return result.ToString();
+    }
+
     private static HashSet<object> Walk(XmlSchemaSet set)
     {
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);

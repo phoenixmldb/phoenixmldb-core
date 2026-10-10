@@ -183,6 +183,7 @@ public static class SchemaCompiler
         try
         {
             AddRoots(set, roots, closure, targetNamespace: null);
+            SchemaPatternGuard.MatchWholeCharacters(set);
             if (patternMatchTimeout is { } limit)
             {
                 // Compiling matches the schema's own values against its patterns, with no limit.
