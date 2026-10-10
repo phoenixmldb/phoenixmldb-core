@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### API
+
+- **`ImplicitTimezone`**: the timezone a date, time or dateTime with none of its own is compared
+  in. `XsDateTime`, `XsDate` and `XsTime` read `ImplicitTimezone.Current` where they read the
+  machine's offset. It is the machine's timezone unless a host sets one with
+  `ImplicitTimezone.Use(offset)`, for the code that runs until the result is disposed, so
+  nothing changes for a host that does not use it.
+
 ### Schemas
 
 - **A pattern facet counts characters as XML Schema does, by code point.** System.Xml hands a
