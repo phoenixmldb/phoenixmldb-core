@@ -11,6 +11,15 @@
   the category it belongs to (`\p{L}`, `\d`, `\w`) or by a class or range that names it.
   `SchemaPatternGuard.MatchWholeCharacters`, which the compiler calls, now rewrites each of
   these. A value with no such character is matched by the pattern as written.
+- **The length facets of a string type count characters, by code point.** `length`, `minLength`
+  and `maxLength` on a type derived from `xs:string` or `xs:anyURI` counted UTF-16 units, so
+  `maxLength="1"` refused one character outside the Basic Multilingual Plane and `minLength="2"`
+  accepted it. That count is inside System.Xml, so after a schema compiles as written each such
+  facet is replaced by a pattern for the same number of characters and the schema is compiled
+  once more (`SchemaPatternGuard.CompileWithCharacterLengths`). The facets of a list type (a
+  number of items) and of a binary type (a number of octets) are not touched. A diagnostic
+  keeps the message and the rule of the facet (`cvc-maxLength-valid`), not those of the pattern.
+  A schema with such facets takes about twice as long to compile; a compiled schema is cached.
 
 ## 2.4.0 — 2026-10-09
 
