@@ -144,6 +144,10 @@ public static class SchemaValidator
                 return;
             }
             var (messageId, code) = reported is null ? (null, rule) : SchemaMessageIds.Of(reported);
+            // A length facet is checked as a pattern; the message has its words back, and
+            // the rule goes with them.
+            if (code == "cvc-pattern-valid" && SchemaPatternGuard.LengthRule(message) is { } lengthRule)
+                code = lengthRule;
             diagnostics.Add(new SchemaDiagnostic(severity, message, name, line, column) { MessageId = messageId, Code = code });
         }
 
@@ -160,13 +164,17 @@ public static class SchemaValidator
                 | (options.CheckIdentityConstraints ? XmlSchemaValidationFlags.ProcessIdentityConstraints : 0)
                 | (options.ReportWarnings ? XmlSchemaValidationFlags.ReportValidationWarnings : 0),
         };
+        // The reader, for the handler: the type of the node a value belongs to says which
+        // length facet a pattern stands for (SchemaPatternGuard.CountCharactersInLengths).
+        XmlReader? reading = null;
         settings.ValidationEventHandler += (_, e) => Report(
             e.Severity == XmlSeverityType.Warning ? SchemaSeverity.Warning : SchemaSeverity.Error,
-            e.Message, e.Exception.LineNumber, e.Exception.LinePosition, e.Exception);
+            SchemaPatternGuard.RestoreLengthMessage(e.Message, reading, e.Exception), e.Exception.LineNumber, e.Exception.LinePosition, e.Exception);
 
         try
         {
             using var reader = open(settings);
+            reading = reader;
             var sawRoot = false;
             while (true)
             {

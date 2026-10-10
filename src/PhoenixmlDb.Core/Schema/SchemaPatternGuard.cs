@@ -26,7 +26,7 @@ namespace PhoenixmlDb.Core.Schema;
 /// did not apply.
 /// </para>
 /// </remarks>
-internal static class SchemaPatternGuard
+internal static partial class SchemaPatternGuard
 {
     private const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 

@@ -190,11 +190,13 @@ public static class SchemaCompiler
                 SchemaPatternGuard.CheckSchemaLiterals(set, limit, new HashSet<string>(StringComparer.Ordinal),
                     new HashSet<string>(StringComparer.Ordinal));
                 set.Compile();
+                SchemaPatternGuard.CompileWithCharacterLengths(set);
                 SchemaPatternGuard.Bound(set, limit);
             }
             else
             {
                 set.Compile();
+                SchemaPatternGuard.CompileWithCharacterLengths(set);
             }
         }
         catch (SchemaCompilationException ex)
