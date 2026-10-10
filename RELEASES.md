@@ -1,5 +1,17 @@
 # Release History
 
+## Unreleased
+
+### Schemas
+
+- **A pattern facet counts characters as XML Schema does, by code point.** System.Xml hands a
+  pattern to a .NET expression, which counts UTF-16 units, so a character outside the Basic
+  Multilingual Plane (an emoji, a mathematical letter) was two characters to `.`, to a negated
+  class (`[^a]`) and to a negated category (`\P{L}`, `\S`, `\D`, `\W`), and was not matched by
+  the category it belongs to (`\p{L}`, `\d`, `\w`) or by a class or range that names it.
+  `SchemaPatternGuard.MatchWholeCharacters`, which the compiler calls, now rewrites each of
+  these. A value with no such character is matched by the pattern as written.
+
 ## 2.4.0 — 2026-10-09
 
 **Breaking**, for code that builds `NodeReader` or reads string values of stored nodes directly.
