@@ -739,8 +739,8 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
         }
         // Per XPath F&O §10.4: when comparing dateTimes where one has a timezone
         // and the other does not, the implicit timezone is applied to the one without.
-        var leftVal = HasTimezone ? Value : new DateTimeOffset(Value.DateTime, DateTimeOffset.Now.Offset);
-        var rightVal = other.HasTimezone ? other.Value : new DateTimeOffset(other.Value.DateTime, DateTimeOffset.Now.Offset);
+        var leftVal = HasTimezone ? Value : new DateTimeOffset(Value.DateTime, ImplicitTimezone.Current);
+        var rightVal = other.HasTimezone ? other.Value : new DateTimeOffset(other.Value.DateTime, ImplicitTimezone.Current);
         return leftVal.CompareTo(rightVal);
     }
 
@@ -1074,14 +1074,14 @@ public readonly record struct XsDate(DateOnly Date, TimeSpan? Timezone) : ICompa
         {
             // Approximate: use year * days_per_year for ordering
             // This is sufficient for comparison but not exact arithmetic
-            var implicitTz = Timezone ?? DateTimeOffset.Now.Offset;
+            var implicitTz = Timezone ?? ImplicitTimezone.Current;
             return EffectiveYear * 365L * TimeSpan.TicksPerDay
                 + Date.Month * 30L * TimeSpan.TicksPerDay
                 + Date.Day * TimeSpan.TicksPerDay
                 - implicitTz.Ticks;
         }
         var dt = Date.ToDateTime(TimeOnly.MinValue);
-        var offset = Timezone ?? DateTimeOffset.Now.Offset;
+        var offset = Timezone ?? ImplicitTimezone.Current;
         return new DateTimeOffset(dt, offset).UtcTicks;
     }
 
@@ -1265,7 +1265,7 @@ public readonly record struct XsTime(TimeOnly Time, TimeSpan? Timezone, int Frac
     /// </summary>
     internal long ToUtcTicks()
     {
-        var offset = Timezone ?? DateTimeOffset.Now.Offset; // implicit timezone = system timezone per spec
+        var offset = Timezone ?? ImplicitTimezone.Current; // implicit timezone = system timezone per spec
         var ticks = Time.Ticks - offset.Ticks;
         return ticks;
     }
