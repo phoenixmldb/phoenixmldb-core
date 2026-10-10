@@ -258,49 +258,56 @@ internal static class SchemaPatternGuard
     /// import and redefine, and — once compiled — the types, elements and attributes the
     /// compilation resolved, anonymous ones included.
     /// </summary>
-    // One character as XML Schema counts it: a code point. A .NET expression counts UTF-16 units,
-    // so "." took a character outside the Basic Multilingual Plane for two.
-    private const string AnyCharacter = @"(?:[^\n\r\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])";
+    // The patterns this class has rewritten, and what it made of each. A set is compiled more
+    // than once (each schema a query imports compiles the set again), and a rewritten pattern
+    // must not be rewritten a second time.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<XmlSchemaPatternFacet, string> Rewritten = new();
 
     /// <summary>
-    /// Makes "." in every pattern facet of a schema set that is not yet compiled match one
-    /// character, as XML Schema defines it, where System.Xml would match one UTF-16 unit: the
-    /// pattern "." refused a value of one character outside the Basic Multilingual Plane. Call it
-    /// before the set is compiled. A pattern it has changed holds no "." of that kind, so a
-    /// second call changes nothing.
+    /// Makes every pattern facet of a schema set that is not yet compiled count characters as
+    /// XML Schema does, by code point, where System.Xml would count UTF-16 units: the pattern
+    /// "." refused a value of one character outside the Basic Multilingual Plane, a negated
+    /// class or category took it for two characters, and a category it belongs to did not match
+    /// it. Call it before the set is compiled. A second call changes nothing.
     /// </summary>
     public static void MatchWholeCharacters(XmlSchemaSet set)
     {
         foreach (var obj in Walk(set))
         {
-            if (obj is XmlSchemaPatternFacet { Value: { } pattern } facet && pattern.Contains('.', StringComparison.Ordinal))
-                facet.Value = WithWholeCharacters(pattern);
+            if (obj is not XmlSchemaPatternFacet { Value: { } pattern } facet)
+                continue;
+            if (Rewritten.TryGetValue(facet, out var done) && done == pattern)
+                continue;
+            var rewritten = WithWholeCharacters(pattern);
+            if (rewritten != pattern)
+                facet.Value = rewritten;
+            Rewritten.AddOrUpdate(facet, rewritten);
         }
     }
 
-    /// <summary>The pattern with each "." that stands for any character replaced; one that is escaped, or inside a character class, is a full stop and stays.</summary>
+    /// <summary>
+    /// The pattern with every atom that stands for one character made to match one code point;
+    /// see <see cref="SchemaPatternCharacters"/>.
+    /// </summary>
+    /// <remarks>
+    /// The rewritten pattern is long (a category is hundreds of ranges above U+FFFF) and an
+    /// alternation where there was a set, so it matches several times slower. Almost every
+    /// value has no character above U+FFFF, and for such a value the pattern as written is
+    /// right. So the result tests the value first, with one pass, and uses the pattern as
+    /// written when it holds no pair. A pattern that itself holds a character above U+FFFF has
+    /// no such form: as written, .NET reads it as two units.
+    /// </remarks>
     internal static string WithWholeCharacters(string pattern)
     {
-        var result = new StringBuilder(pattern.Length + 16);
-        var classDepth = 0;
-        for (var i = 0; i < pattern.Length; i++)
+        var rewritten = SchemaPatternCharacters.Rewrite(pattern);
+        if (rewritten == pattern)
+            return pattern;
+        foreach (var c in pattern)
         {
-            var c = pattern[i];
-            if (c == '\\' && i + 1 < pattern.Length)
-            {
-                result.Append(c).Append(pattern[++i]);
-                continue;
-            }
-            if (c == '[')
-                classDepth++;
-            else if (c == ']' && classDepth > 0)
-                classDepth--;
-            if (c == '.' && classDepth == 0)
-                result.Append(AnyCharacter);
-            else
-                result.Append(c);
+            if (char.IsSurrogate(c))
+                return rewritten;
         }
-        return result.ToString();
+        return @"(?(?=[^\uD800-\uDFFF]*\z)(?:" + pattern + ")|(?:" + rewritten + "))";
     }
 
     private static HashSet<object> Walk(XmlSchemaSet set)
