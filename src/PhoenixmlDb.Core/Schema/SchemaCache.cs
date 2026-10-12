@@ -55,7 +55,12 @@ public sealed record SchemaCacheOptions
 /// </remarks>
 public sealed class SchemaCache
 {
-    /// <summary>The cache the engines share. A host that wants its own keeps its own instance.</summary>
+    /// <summary>
+    /// A cache for the whole process, for a host that has no reason to keep its own. The engines
+    /// do not use it: PhoenixmlDb.XQuery and PhoenixmlDb.Xslt keep the schemas of
+    /// <c>import schema</c> and <c>xsl:import-schema</c> in a cache of their own, which checks
+    /// the documents at each use.
+    /// </summary>
     public static SchemaCache Default { get; } = new();
 
     private readonly SchemaCacheOptions _options;
