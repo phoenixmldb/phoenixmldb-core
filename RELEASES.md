@@ -1,6 +1,11 @@
 # Release History
 
-## Unreleased
+## 2.5.0 — 2026-10-13
+
+Minor because it adds API. Nothing changes for existing callers that do not set an implicit
+timezone. Serialized output does not change; a schema validation result can change for a value that
+contains characters outside the Basic Multilingual Plane, because those are now counted as one
+character each (the messages keep their wording).
 
 ### API
 
