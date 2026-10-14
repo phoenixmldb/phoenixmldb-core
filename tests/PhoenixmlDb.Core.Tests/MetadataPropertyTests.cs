@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using PhoenixmlDb.Core.Metadata;
 using PhoenixmlDb.Xdm;
 using Xunit;
