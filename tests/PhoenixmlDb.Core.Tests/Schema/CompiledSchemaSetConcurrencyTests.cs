@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Xml;
 using System.Xml.Schema;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PhoenixmlDb.Core.Tests.Schema;

@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using FluentAssertions;
+using AwesomeAssertions;
 using PhoenixmlDb.Core.Schema;
 using Xunit;
 

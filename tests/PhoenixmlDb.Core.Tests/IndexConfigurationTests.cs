@@ -1,5 +1,5 @@
 using PhoenixmlDb.Xdm;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PhoenixmlDb.Core.Tests;
