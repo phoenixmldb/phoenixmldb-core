@@ -39,7 +39,7 @@ public class NamespaceRegistryTests
     public void EveryWellKnownId_IsBelowFirstUserNamespaceId()
     {
         NamespaceRegistry.WellKnown.Should()
-            .OnlyContain(ns => ns.Value < NamespaceId.FirstUserNamespaceId);
+            .NotBeEmpty().And.OnlyContain(ns => ns.Value < NamespaceId.FirstUserNamespaceId);
     }
 
     // Id 9 was https://schemas.phoenixml.dev/2026/db. Stored keys encode namespace ids, so it is retired
