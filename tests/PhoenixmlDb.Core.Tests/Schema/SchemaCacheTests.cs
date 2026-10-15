@@ -251,7 +251,7 @@ public sealed class SchemaCacheTests
         release.SetResult();
         var results = await Task.WhenAll(requests);
 
-        results.Should().OnlyContain(r => ReferenceEquals(r, results[0]));
+        results.Should().NotBeEmpty().And.OnlyContain(r => ReferenceEquals(r, results[0]));
         gate.Opens.Should().Be(2);
     }
 
