@@ -1,6 +1,11 @@
 # Release History
 
-## Unreleased
+## 2.6.0 — 2026-10-20
+
+Minor because a schema-validated node's type annotation changes: a node of a union type is annotated
+with the union, not with the member its value matched. A host that reads `TypeAnnotation` of such a
+node sees the union's name. No API is removed or changed; serialized output does not change. The
+database engine's gate on this release candidate (df34ec2) was identical to its 2.5.0 baseline.
 
 - **Documentation: `IDocument` is a handle, not a snapshot.** Its documentation said the document is
   an immutable snapshot taken when it was retrieved; a read returns one committed version, whole,
