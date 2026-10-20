@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Documentation: `IDocument` is a handle, not a snapshot.** Its documentation said the document is
+  an immutable snapshot taken when it was retrieved; a read returns one committed version, whole,
+  and which version is the implementation's to define (the engine: the version current when the
+  read starts, or that of the enclosing read transaction). No code changes.
+
 - **An element in several substitution groups (XSD 1.1) loads.** The XSD 1.1 compatibility layer
   keeps the first head in `substitutionGroup`, which the XSD 1.0 processor reads, and lists every
   head as expanded names in `urn:phoenixmldb:xsd11-compatibility:substitutionGroups`, an attribute

@@ -14,8 +14,11 @@ namespace PhoenixmlDb.Core;
 /// </summary>
 /// <remarks>
 /// <para>
-/// An <c>IDocument</c> is an immutable snapshot of a document at the time it was retrieved.
-/// It does not track changes — if you modify the content, you must call
+/// An <c>IDocument</c> is a handle to a stored document. A read of its content, stream, tree or
+/// metadata returns one committed version of the document, whole; which version is defined by the
+/// implementation (the PhoenixmlDb engine: the version current when the read starts, or the version
+/// of the enclosing read transaction). The handle does not track changes you make — if you modify
+/// the content, you must call
 /// <see cref="IContainer.PutDocumentAsync(string, string, DocumentOptions?, CancellationToken)"/>
 /// again to persist the updated version.
 /// </para>
