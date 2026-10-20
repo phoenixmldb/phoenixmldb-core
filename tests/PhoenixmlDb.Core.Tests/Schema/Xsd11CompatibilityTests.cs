@@ -240,4 +240,35 @@ public sealed class Xsd11CompatibilityTests
         FluentActions.Invoking(() => Compile(Schema("""<xs:include schemaLocation="part.xsd"/>"""), null, SchemaSource.FromText(part, PartUri)))
             .Should().Throw<SchemaCompilationException>().WithMessage("*mem://test/vc/part.xsd*requires XSD 1.1*xs:assert (1)*");
     }
+
+    /// <summary>
+    /// An element in several substitution groups (XSD 1.1: substitutionGroup is a list) loads: the
+    /// declaration keeps the first head for the 1.0 processor, and every head is listed, as
+    /// expanded names, in an attribute of the compatibility namespace that the declaration keeps.
+    /// The schema did not compile.
+    /// </summary>
+    [Fact]
+    public void An_element_in_several_substitution_groups_lists_every_head()
+    {
+        var schema = Compile(Schema("""
+            <xs:element name="h1"/>
+            <xs:element name="h2"/>
+            <xs:element name="m" substitutionGroup="h1 h2"/>
+            """));
+        var member = (System.Xml.Schema.XmlSchemaElement)schema.SchemaSet.GlobalElements[new System.Xml.XmlQualifiedName("m", "urn:v")]!;
+        member.SubstitutionGroup.Should().Be(new System.Xml.XmlQualifiedName("h1", "urn:v"));
+        member.UnhandledAttributes.Should().ContainSingle(a => a.NamespaceURI == "urn:phoenixmldb:xsd11-compatibility")
+            .Which.Value.Should().Be("{urn:v}h1 {urn:v}h2");
+        FluentActions.Invoking(() => Compile(Schema("""<xs:element name="h1"/><xs:element name="h2"/><xs:element name="m" substitutionGroup="h1 h2"/>"""), Off))
+            .Should().Throw<SchemaCompilationException>();
+    }
+
+    /// <summary>A single head, the common XSD 1.0 case, is left as it is.</summary>
+    [Fact]
+    public void A_single_substitution_head_is_left_alone()
+    {
+        var schema = Compile(Schema("""<xs:element name="h1"/><xs:element name="m" substitutionGroup="h1"/>"""));
+        var member = (System.Xml.Schema.XmlSchemaElement)schema.SchemaSet.GlobalElements[new System.Xml.XmlQualifiedName("m", "urn:v")]!;
+        member.UnhandledAttributes.Should().BeNull();
+    }
 }
