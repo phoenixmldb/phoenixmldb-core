@@ -310,9 +310,11 @@ public sealed class XmlDocumentParser
         var isIdContent = false;
         // Captured for the XdmElement.TypeAnnotation projection below.
         // Schema-validating readers populate SchemaInfo.SchemaType only when a
-        // global element declaration matched (strict/lax). For union types, the
-        // MemberType is the selected branch — that's what XQuery's data-model
-        // expects on the element node (XDM §5.10.7).
+        // global element declaration matched (strict/lax). The annotation is the governing
+        // type: for a union type the union, not the member the value matched (XDM 3.1
+        // §3.3.1.2, [type definition]). The member decides the typed value, which is computed
+        // from the annotation and the string value. With the member as the annotation,
+        // element(*, M) matched an element declared with the union type U (W3C XSLT match-195).
         System.Xml.XmlQualifiedName? elementSchemaTypeQName = null;
         System.Xml.Schema.XmlSchemaType? elementSchemaType = null;
         if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo elemSchemaInfo)
@@ -333,10 +335,9 @@ public sealed class XmlDocumentParser
                     memberType.Datatype?.TypeCode == System.Xml.Schema.XmlTypeCode.Id)
                     isIdContent = true;
             }
-            // Prefer MemberType for unions so the annotation reflects the actually-matched branch.
-            elementSchemaTypeQName = elemSchemaInfo.MemberType?.QualifiedName
-                ?? elemSchemaInfo.SchemaType?.QualifiedName;
-            elementSchemaType = elemSchemaInfo.MemberType ?? elemSchemaInfo.SchemaType;
+            elementSchemaTypeQName = elemSchemaInfo.SchemaType?.QualifiedName
+                ?? elemSchemaInfo.MemberType?.QualifiedName;
+            elementSchemaType = elemSchemaInfo.SchemaType ?? elemSchemaInfo.MemberType;
         }
 
         // Collect attributes
@@ -582,16 +583,15 @@ public sealed class XmlDocumentParser
             }
         }
 
-        // Pull the attribute's schema type for TypeAnnotation. XSD-validated attributes
-        // expose their typed value through SchemaInfo; treat the union MemberType as the
-        // chosen branch so the annotation matches the value actually consumed by atomization.
+        // Pull the attribute's schema type for TypeAnnotation: the governing type, for a union
+        // the union and not the member the value matched, as for an element above.
         System.Xml.XmlQualifiedName? attrSchemaTypeQName = null;
         System.Xml.Schema.XmlSchemaType? attrSchemaType = null;
         if (reader.SchemaInfo is System.Xml.Schema.IXmlSchemaInfo attrSchemaInfo)
         {
-            attrSchemaTypeQName = attrSchemaInfo.MemberType?.QualifiedName
-                ?? attrSchemaInfo.SchemaType?.QualifiedName;
-            attrSchemaType = attrSchemaInfo.MemberType ?? attrSchemaInfo.SchemaType;
+            attrSchemaTypeQName = attrSchemaInfo.SchemaType?.QualifiedName
+                ?? attrSchemaInfo.MemberType?.QualifiedName;
+            attrSchemaType = attrSchemaInfo.SchemaType ?? attrSchemaInfo.MemberType;
         }
         var attrTypeAnnotation = AnnotatorName(attrSchemaType)
             ?? ResolveSchemaTypeAnnotation(attrSchemaTypeQName, XdmTypeName.UntypedAtomic);

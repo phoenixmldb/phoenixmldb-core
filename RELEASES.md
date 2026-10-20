@@ -1,5 +1,15 @@
 # Release History
 
+## Unreleased
+
+- **Behaviour change: a node validated against a union type is annotated with the union, not with
+  the member type its value matched** (XDM 3.1 §3.3.1.2: the annotation is the governing type).
+  `XmlDocumentParser` passes the union to `SchemaTypeAnnotator`; the annotator computes the typed
+  value, which still comes from the first member the value is valid for. With the member as the
+  annotation, `element(*, M)` matched an element declared with the union type U, and
+  `element(*, U)` relied on union membership to match it. An xs:ID member still makes the content
+  an ID. W3C XSLT match-195, match-211, with the XQuery and XSLT changes.
+
 ## 2.5.0 — 2026-10-13
 
 Minor because it adds API. Nothing changes for existing callers that do not set an implicit
