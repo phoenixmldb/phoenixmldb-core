@@ -23,6 +23,15 @@ namespace PhoenixmlDb.Core.Schema;
 /// constraint is not applied: an <c>xs:dayTimeDuration</c> with a year component is accepted.
 /// </para>
 /// <para>
+/// <b>An element in several substitution groups</b> (XSD 1.1 §3.3.2: <c>substitutionGroup</c> is a
+/// list). The attribute keeps the first head, which a 1.0 processor reads, and every head is
+/// recorded as expanded names in <see cref="SubstitutionGroupsAttribute"/>, an attribute in a
+/// namespace of this layer's that the processor keeps on the declaration
+/// (<c>XmlSchemaElement.UnhandledAttributes</c>), for a consumer that decides membership itself.
+/// Validation sees the first head only: an instance that substitutes the element for another head
+/// is refused.
+/// </para>
+/// <para>
 /// A document that is rewritten is serialized again, so the line and column of a later diagnostic
 /// about it can differ from the original where an element was removed.
 /// </para>
@@ -32,6 +41,16 @@ internal static class Xsd11Compatibility
     private const string VcNamespace = "http://www.w3.org/2007/XMLSchema-versioning";
     private const string XsdNamespace = "http://www.w3.org/2001/XMLSchema";
     private const decimal ProcessorVersion = 1.0m;
+
+    /// <summary>The namespace of the attributes this layer adds to a schema document.</summary>
+    public const string CompatibilityNamespace = "urn:phoenixmldb:xsd11-compatibility";
+
+    /// <summary>
+    /// The local name of the attribute, in <see cref="CompatibilityNamespace"/>, that lists every
+    /// head of an element declared in several substitution groups, each as <c>{uri}local</c>,
+    /// separated by spaces.
+    /// </summary>
+    public const string SubstitutionGroupsAttribute = "substitutionGroups";
 
     private static readonly Dictionary<string, string> Xsd11BuiltIns = new(StringComparer.Ordinal)
     {
@@ -67,7 +86,7 @@ internal static class Xsd11Compatibility
     public static byte[] Apply(byte[] document, out string? requiresXsd11)
     {
         requiresXsd11 = null;
-        if (!MayNeedRewriting(document))
+        if (!MayNeedRewriting(document) && !HasListedSubstitutionGroup(document))
             return document;
         XDocument doc;
         try
@@ -98,6 +117,21 @@ internal static class Xsd11Compatibility
                     changed = true;
                 }
             }
+        }
+
+        foreach (var element in doc.Descendants(XName.Get("element", XsdNamespace)))
+        {
+            if (element.Attribute("substitutionGroup") is not { } group)
+                continue;
+            var heads = group.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (heads.Length < 2)
+                continue;
+            var expanded = heads.Select(head => ExpandedName(head, element)).ToList();
+            if (expanded.Contains(null))
+                continue; // an unbound prefix: the schema parser reports it
+            group.Value = heads[0];
+            element.SetAttributeValue(XName.Get(SubstitutionGroupsAttribute, CompatibilityNamespace), string.Join(' ', expanded));
+            changed = true;
         }
 
         var minName = XName.Get("minVersion", VcNamespace);
@@ -160,6 +194,40 @@ internal static class Xsd11Compatibility
             if (span.IndexOf(marker) >= 0)
                 return true;
         return false;
+    }
+
+    /// <summary>
+    /// Whether a <c>substitutionGroup</c> attribute in the bytes holds more than one name: a
+    /// space after a name and before the closing quote. The attribute is common in XSD 1.0
+    /// schemas, with one name, which needs no parsing.
+    /// </summary>
+    private static bool HasListedSubstitutionGroup(byte[] document)
+    {
+        var span = document.AsSpan();
+        var marker = "substitutionGroup"u8;
+        for (var at = span.IndexOf(marker); at >= 0;)
+        {
+            var rest = span[(at + marker.Length)..];
+            var quote = rest.IndexOfAny((byte)'"', (byte)'\'');
+            if (quote < 0)
+                return false;
+            var close = rest[(quote + 1)..].IndexOf(rest[quote]);
+            if (close < 0)
+                return false;
+            var value = rest.Slice(quote + 1, close).Trim(" \t\r\n"u8);
+            if (value.IndexOfAny(" \t\r\n"u8) >= 0)
+                return true;
+            var next = rest[(quote + 1 + close)..].IndexOf(marker);
+            at = next < 0 ? -1 : at + marker.Length + quote + 1 + close + next;
+        }
+        return false;
+    }
+
+    private static string? ExpandedName(string qname, XElement scope)
+    {
+        var colon = qname.IndexOf(':', StringComparison.Ordinal);
+        var ns = colon < 0 ? scope.GetDefaultNamespace() : scope.GetNamespaceOfPrefix(qname[..colon]);
+        return ns is null ? null : "{" + ns.NamespaceName + "}" + (colon < 0 ? qname : qname[(colon + 1)..]);
     }
 
     private static string MapBuiltIn(string qname, XElement scope)

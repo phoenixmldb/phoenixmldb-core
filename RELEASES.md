@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **An element in several substitution groups (XSD 1.1) loads.** The XSD 1.1 compatibility layer
+  keeps the first head in `substitutionGroup`, which the XSD 1.0 processor reads, and lists every
+  head as expanded names in `urn:phoenixmldb:xsd11-compatibility:substitutionGroups`, an attribute
+  the declaration keeps (`XmlSchemaElement.UnhandledAttributes`). The schema did not compile.
+  Validation sees the first head only. QT3 substitution-020..025, with the XQuery change.
+
 - **Behaviour change: a node validated against a union type is annotated with the union, not with
   the member type its value matched** (XDM 3.1 §3.3.1.2: the annotation is the governing type).
   `XmlDocumentParser` passes the union to `SchemaTypeAnnotator`; the annotator computes the typed
