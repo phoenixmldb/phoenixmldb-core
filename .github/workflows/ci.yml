@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,7 +99,7 @@ jobs:
   # this suite on Windows, so a whole class of per-OS byte differences could not fail CI. Same
   # job as the engine repos' test-windows; it gates publish.
   test-windows:
-    runs-on: windows-latest
+    runs-on: ${{ fromJSON(vars.WINDOWS_RUNS_ON || '"windows-latest"') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -123,7 +123,7 @@ jobs:
     # breaking the workflow file. Two repos, two shapes.
     needs: [build, test-windows]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '"ubuntu-latest"') }}
     permissions:
       contents: read
       id-token: write
