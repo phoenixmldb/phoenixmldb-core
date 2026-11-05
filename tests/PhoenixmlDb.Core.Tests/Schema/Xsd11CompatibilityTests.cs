@@ -198,6 +198,18 @@ public sealed class Xsd11CompatibilityTests
             .WithMessage("*mem://test/vc/main.xsd*requires XSD 1.1*vc:minVersion=\"1.1\"*XSD 1.0*");
     }
 
+    /// <summary>
+    /// The message does not say that the processor "implements XSD 1.0". The engines report
+    /// <c>system-property('xsl:xsd-version')</c> = 1.1 and use the XSD 1.1 built-in types; only
+    /// the compilation of schema documents is XSD 1.0. The message says which part is which.
+    /// </summary>
+    [Fact]
+    public void The_message_says_that_only_schema_documents_are_compiled_as_1_0()
+        => FluentActions.Invoking(() => Compile(Schema("""<xs:complexType name="t"><xs:assert test="true()"/></xs:complexType>""")))
+            .Should().Throw<SchemaCompilationException>()
+            .WithMessage("*uses the XSD 1.1 built-in types*compiles schema documents as XSD 1.0*vc:minVersion*vc:maxVersion*")
+            .And.Message.Should().NotContain("implements XSD 1.0");
+
     [Theory]
     [InlineData("""<xs:complexType name="t"><xs:attribute name="a" type="xs:integer"/><xs:assert test="@a gt 0"/></xs:complexType>""", "xs:assert (1)")]
     [InlineData("""<xs:simpleType name="t"><xs:restriction base="xs:integer"><xs:assertion test="$value gt 0"/></xs:restriction></xs:simpleType>""", "xs:assertion (1)")]

@@ -312,7 +312,8 @@ public static class SchemaCompiler
                         // root element, or an element "not supported in this context".
                         Errors.Add(new SchemaDiagnostic(SchemaSeverity.Error,
                             $"The schema document '{request.Uri.AbsoluteUri}' requires XSD 1.1: {requiresXsd11}. "
-                            + "This processor implements XSD 1.0 and reads only the parts of a schema that are marked for it.",
+                            + "This processor uses the XSD 1.1 built-in types, but compiles schema documents as XSD 1.0: "
+                            + "it reads only the parts that vc:minVersion and vc:maxVersion leave to an XSD 1.0 processor.",
                             request.Uri.AbsoluteUri));
                         continue;
                     }

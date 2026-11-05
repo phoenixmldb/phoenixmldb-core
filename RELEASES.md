@@ -1,5 +1,14 @@
 # Release History
 
+## Unreleased
+
+- **The message for a schema that requires XSD 1.1 says which part of the processor is XSD 1.0.**
+  The engines use the XSD 1.1 built-in types and report `system-property('xsl:xsd-version')` as
+  `1.1`; the schema layer compiles schema documents as XSD 1.0. The message reads: "This
+  processor uses the XSD 1.1 built-in types, but compiles schema documents as XSD 1.0: it reads
+  only the parts that vc:minVersion and vc:maxVersion leave to an XSD 1.0 processor." Only the
+  wording changes: the same schemas load and fail.
+
 ## 2.6.0 — 2026-10-20
 
 Minor because a schema-validated node's type annotation changes: a node of a union type is annotated
