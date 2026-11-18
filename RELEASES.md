@@ -1,6 +1,9 @@
 # Release History
 
-## Unreleased
+## 2.6.1 — 2026-11-18
+
+Patch: one message text. No API or behaviour changes. Released with PhoenixmlDb.XQuery and
+PhoenixmlDb.Xslt 3.2.0, whose release gates ran on this source.
 
 - **The message for a schema that requires XSD 1.1 says which part of the processor is XSD 1.0.**
   The engines use the XSD 1.1 built-in types and report `system-property('xsl:xsd-version')` as
