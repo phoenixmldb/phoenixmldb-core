@@ -533,6 +533,23 @@ public readonly record struct XsDateTime(DateTimeOffset Value, bool HasTimezone)
     /// </summary>
     public long? ExtendedYear { get; init; }
 
+    /// <summary>
+    /// The value is an <c>xs:dateTimeStamp</c> (XSD 1.1), the type derived from <c>xs:dateTime</c>
+    /// that requires a timezone, and not only an <c>xs:dateTime</c> that has one. Set by the
+    /// <c>xs:dateTimeStamp</c> constructor and by a cast to that type; an operation that makes a new
+    /// value gives an <c>xs:dateTime</c>, so it is not carried over. Without it, an xs:dateTime with a
+    /// timezone could not be told from an xs:dateTimeStamp: <c>xs:dateTime('2026-01-01T00:00:00Z')
+    /// instance of xs:dateTimeStamp</c> was true. It takes no part in equality, ordering or hashing:
+    /// an xs:dateTimeStamp is equal to the xs:dateTime with the same value.
+    /// </summary>
+    public bool IsDateTimeStamp { get; init; }
+
+    /// <summary>Equality of the value, as before <see cref="IsDateTimeStamp"/>, which takes no part in it.</summary>
+    public bool Equals(XsDateTime other)
+        => Value.Equals(other.Value) && HasTimezone == other.HasTimezone && ExtendedYear == other.ExtendedYear;
+
+    public override int GetHashCode() => HashCode.Combine(Value, HasTimezone, ExtendedYear);
+
     public static bool operator <(XsDateTime left, XsDateTime right) => left.CompareTo(right) < 0;
     public static bool operator >(XsDateTime left, XsDateTime right) => left.CompareTo(right) > 0;
     public static bool operator <=(XsDateTime left, XsDateTime right) => left.CompareTo(right) <= 0;

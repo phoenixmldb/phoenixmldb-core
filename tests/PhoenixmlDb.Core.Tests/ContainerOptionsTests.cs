@@ -4,6 +4,10 @@ using Xunit;
 
 namespace PhoenixmlDb.Core.Tests;
 
+// CA2234 asks for the Uri overload of AddNameIndex, even though that overload is [Obsolete]; the
+// string overload is the one that keeps a namespace name unchanged (phoenixml#141).
+#pragma warning disable CA2234
+
 /// <summary>
 /// Tests for ContainerOptions configuration.
 /// </summary>
@@ -119,7 +123,7 @@ public class ContainerOptionsTests
         options.DefaultNamespaces["xs"] = "http://www.w3.org/2001/XMLSchema";
 
         options.Indexes
-            .AddNameIndex((Uri?)null)
+            .AddNameIndex((string?)null)
             .AddPathIndex("//element")
             .EnableStructuralIndex();
 

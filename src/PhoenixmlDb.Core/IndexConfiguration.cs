@@ -281,9 +281,12 @@ public sealed class IndexConfiguration
     /// <summary>
     /// Adds a name index for the namespace whose name is the original string of
     /// <paramref name="namespaceUri"/> (<see cref="Uri.OriginalString"/>), not its normalized form.
+    /// Obsolete: use <see cref="AddNameIndex(string?)"/>. A namespace name is a string, which a
+    /// <see cref="Uri"/> may normalize, and need not be a URI at all.
     /// </summary>
     /// <param name="namespaceUri">The namespace, or <c>null</c> to index names in all namespaces.</param>
     /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
+    [Obsolete("Use AddNameIndex(string). A namespace name is a string; this overload stores Uri.OriginalString and will be removed in the next major version.")]
     public IndexConfiguration AddNameIndex(Uri? namespaceUri = null)
     {
         var name = namespaceUri?.OriginalString;
