@@ -1,5 +1,27 @@
 # Release History
 
+## 2.6.2 — 2026-11-18
+
+Patch: XML parsing with `preserveWhitespace: false`. No API changes. The XQuery and Xslt engines
+parse with `preserveWhitespace: true` and are not affected.
+
+- **With `preserveWhitespace: false`, the parser removes a whitespace-only text node only in
+  element-only content** (indentation between elements). It keeps the node:
+  - in mixed content, that is, an element that also has a text child that is not whitespace:
+    `<p>a <b>b</b> <i>c</i></p>` reads back as `a b c`;
+  - under `xml:space="preserve"`, until an inner `xml:space="default"` (XML 1.0 §2.10);
+  - when the node is a CDATA section.
+
+  Whitespace from character and entity references counts as whitespace. `preserveWhitespace: true`
+  keeps all whitespace. Stored documents are not rewritten. A document parsed with
+  `preserveWhitespace: false` can have more nodes than with 2.6.1: the mixed-content spaces.
+
+- **Cost.** With `preserveWhitespace: false` the parser reads the input two times, because node
+  ids follow document order and are contiguous, and the decision for a whitespace node is known
+  only at the end tag of its parent. A seekable stream is read again from its start position; a
+  `TextReader` or a forward-only stream is buffered once. On a 15.5 MB document, `Parse(Stream)`
+  takes 1075–1238 ms (2.6.1: 843–929 ms). `preserveWhitespace: true` reads the input one time.
+
 ## 2.6.1 — 2026-11-18
 
 Patch: one message text. No API or behaviour changes. Released with PhoenixmlDb.XQuery and
