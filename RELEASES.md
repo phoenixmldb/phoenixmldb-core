@@ -1,5 +1,34 @@
 # Release History
 
+## 2.7.0 — 2026-11-20
+
+Minor because the public API adds members and marks two obsolete. Nothing is removed, and code that
+uses an obsolete member still compiles; a project that treats warnings as errors sees CS0618 until
+it moves to the replacement. One source change: the parameter of `AddNameIndex(string?)` is named
+`namespaceName`, so a call that names the argument `namespaceUri:` does not compile.
+
+- **A name index keeps its namespace name exactly as given.** `NameIndexDefinition` has a new
+  property, `NamespaceName` (`string?`). A namespace name is compared as a string, codepoint by
+  codepoint, so `http://example.com` and `http://example.com/` are different namespaces. An index
+  declared with `AddNameIndex("http://example.com")` matches the elements in that namespace. Any
+  non-empty string is accepted, relative names included, as the XML parser accepts them. `null` or
+  an empty string indexes names in all namespaces.
+- **`NameIndexDefinition.NamespaceUri` is obsolete.** A `System.Uri` normalizes its text
+  (`http://example.com` becomes `http://example.com/`). The property reads and writes
+  `NamespaceName` through `Uri.OriginalString`; its getter is `null` for a name that is not a URI
+  reference.
+- **`IndexConfiguration.AddNameIndex(Uri)` is obsolete.** Use `AddNameIndex(string)`. The `Uri`
+  overload stores `Uri.OriginalString`, and its parameter has no default value. `AddNameIndex()` with
+  no argument selects the string overload and indexes names in all namespaces. An untyped `null`
+  argument is ambiguous between the two overloads; pass `(string?)null`.
+- **The parameter of `AddNameIndex(string?)` is named `namespaceName`.** The code analysis rule CA2234
+  does not tell callers to use the `Uri` overload.
+- **`XsDateTime.IsDateTimeStamp`** is a new `init` property (default `false`). It marks a value of the
+  derived type `xs:dateTimeStamp`, so that a type check can tell it from an `xs:dateTime` value with a
+  timezone. It takes no part in equality, hashing or ordering, and a `with` copy keeps it.
+
+The obsolete members are removed in the next major version.
+
 ## 2.6.2 — 2026-11-18
 
 Patch: XML parsing with `preserveWhitespace: false`. No API changes. The XQuery and Xslt engines
