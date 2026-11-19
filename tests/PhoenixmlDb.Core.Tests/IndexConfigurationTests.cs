@@ -51,8 +51,7 @@ public class IndexConfigurationTests
 
         var nameIndex = indexes[0] as NameIndexDefinition;
         nameIndex.Should().NotBeNull();
-        nameIndex!.NamespaceUri.Should().NotBeNull();
-        nameIndex.NamespaceUri!.ToString().Should().Be("http://example.com/ns");
+        nameIndex!.NamespaceName.Should().Be("http://example.com/ns");
     }
 
     [Fact]
@@ -526,8 +525,8 @@ public class IndexDefinitionTests
     [Fact]
     public void NameIndexDefinition_Equality()
     {
-        var index1 = new NameIndexDefinition { NamespaceUri = new Uri("http://example.com") };
-        var index2 = new NameIndexDefinition { NamespaceUri = new Uri("http://example.com") };
+        var index1 = new NameIndexDefinition { NamespaceName = "http://example.com" };
+        var index2 = new NameIndexDefinition { NamespaceName = "http://example.com" };
 
         index1.Should().Be(index2);
     }
