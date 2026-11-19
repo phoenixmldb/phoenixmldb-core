@@ -100,8 +100,11 @@ public sealed class XmlDocumentParser
     /// This is typically backed by a database-wide namespace table.
     /// </param>
     /// <param name="preserveWhitespace">
-    /// When <c>true</c>, whitespace-only text nodes are preserved. When <c>false</c> (default),
-    /// they are discarded, matching the behavior of <c>strip-space</c> in XSLT.
+    /// When <c>true</c>, every whitespace-only text node is kept. When <c>false</c> (default), a
+    /// whitespace-only text node is discarded only in element-only content (indentation between
+    /// elements). It is kept in mixed content (an element that also has a non-whitespace text
+    /// child), under <c>xml:space="preserve"</c> until an inner <c>xml:space="default"</c>, and when
+    /// it holds a CDATA section.
     /// </param>
     public XmlDocumentParser(
         DocumentId documentId,
