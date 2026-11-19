@@ -4,6 +4,10 @@ using Xunit;
 
 namespace PhoenixmlDb.Core.Tests;
 
+// CA2234 asks for the Uri overload of AddNameIndex, even though that overload is [Obsolete]; the
+// string overload is the one that keeps a namespace name unchanged (phoenixml#141).
+#pragma warning disable CA2234
+
 /// <summary>
 /// Tests for IndexConfiguration fluent builder.
 /// </summary>
@@ -31,13 +35,14 @@ public class IndexConfigurationTests
     {
         var config = new IndexConfiguration();
 
-        var result = config.AddNameIndex((Uri?)null);
+        var result = config.AddNameIndex((string?)null);
 
         result.Should().BeSameAs(config);
         config.Indexes.Should().HaveCount(1);
         config.Indexes[0].Should().BeOfType<NameIndexDefinition>();
     }
 
+#pragma warning disable CS0618 // the obsolete Uri overload, on purpose
     [Fact]
     public void AddNameIndex_WithNamespace_AddsIndex()
     {
@@ -53,7 +58,9 @@ public class IndexConfigurationTests
         nameIndex.Should().NotBeNull();
         nameIndex!.NamespaceName.Should().Be("http://example.com/ns");
     }
+#pragma warning restore CS0618
 
+#pragma warning disable CS0618 // the obsolete Uri overload, on purpose
     [Fact]
     public void AddNameIndex_WithEmptyString_AddsIndexWithEmptyUri()
     {
@@ -65,6 +72,7 @@ public class IndexConfigurationTests
         var nameIndex = config.Indexes[0] as NameIndexDefinition;
         nameIndex.Should().NotBeNull();
     }
+#pragma warning restore CS0618
 
     [Fact]
     public void AddPathIndex_AddsIndex()
@@ -295,7 +303,7 @@ public class IndexConfigurationTests
     public void FluentChaining_AllMethodsChain()
     {
         var config = new IndexConfiguration()
-            .AddNameIndex(new Uri("http://example.com"))
+            .AddNameIndex("http://example.com")
             .AddPathIndex("/root/element")
             .AddValueIndex("/root/price", XdmValueType.XdmDecimal)
             .AddFullTextIndex("//text")
@@ -322,7 +330,7 @@ public class IndexConfigurationTests
     public void MixedIndexTypes_AllAdded()
     {
         var config = new IndexConfiguration()
-            .AddNameIndex((Uri?)null)
+            .AddNameIndex((string?)null)
             .AddPathIndex("/root")
             .AddValueIndex("/price", XdmValueType.XdmDecimal)
             .AddFullTextIndex()
