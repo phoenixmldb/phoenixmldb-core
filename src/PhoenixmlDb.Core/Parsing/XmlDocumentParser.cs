@@ -58,6 +58,10 @@ public sealed class XmlDocumentParser
     // string-value computation of a large element O(N^2).
     private readonly Dictionary<NodeId, XdmNode> _nodesById = new();
     private readonly bool _preserveWhitespace;
+    // When stripping: for each element in document order (start-tag order), whether it has a
+    // text child with a non-whitespace character (mixed content). See PrescanMixedContent.
+    private List<bool>? _mixedContent;
+    private int _elementOrdinal;
 
     /// <summary>
     /// Appends a node to the flat node list and the id index in lockstep.
@@ -96,8 +100,11 @@ public sealed class XmlDocumentParser
     /// This is typically backed by a database-wide namespace table.
     /// </param>
     /// <param name="preserveWhitespace">
-    /// When <c>true</c>, whitespace-only text nodes are preserved. When <c>false</c> (default),
-    /// they are discarded, matching the behavior of <c>strip-space</c> in XSLT.
+    /// When <c>true</c>, every whitespace-only text node is kept. When <c>false</c> (default), a
+    /// whitespace-only text node is discarded only in element-only content (indentation between
+    /// elements). It is kept in mixed content (an element that also has a non-whitespace text
+    /// child), under <c>xml:space="preserve"</c> until an inner <c>xml:space="default"</c>, and when
+    /// it holds a CDATA section.
     /// </param>
     public XmlDocumentParser(
         DocumentId documentId,
@@ -133,8 +140,13 @@ public sealed class XmlDocumentParser
     /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(string xml, string? documentUri = null)
     {
+        if (!_preserveWhitespace)
+        {
+            using var prescanSource = new StringReader(xml);
+            _mixedContent = PrescanMixedContent(prescanSource);
+        }
         using var reader = new StringReader(xml);
-        return Parse(reader, documentUri);
+        return ParseTextReader(reader, documentUri);
     }
 
     /// <summary>
@@ -146,9 +158,19 @@ public sealed class XmlDocumentParser
     /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(TextReader textReader, string? documentUri = null)
     {
+        // Stripping needs two passes over the text (see PrescanMixedContent); a TextReader
+        // cannot be rewound, so it is read once into a string.
+        if (!_preserveWhitespace)
+            return Parse(textReader.ReadToEnd(), documentUri);
+        return ParseTextReader(textReader, documentUri);
+    }
+
+    private ParseResult ParseTextReader(TextReader textReader, string? documentUri)
+    {
         var settings = new XmlReaderSettings
         {
-            IgnoreWhitespace = !_preserveWhitespace,
+            // Whitespace is always read; ParseElement decides what to strip (phoenixml#130).
+            IgnoreWhitespace = false,
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
@@ -174,9 +196,17 @@ public sealed class XmlDocumentParser
     /// <returns>A <see cref="ParseResult"/> containing the document and all parsed nodes.</returns>
     public ParseResult Parse(TextReader textReader, string? documentUri, System.Xml.Schema.XmlSchemaSet schemas)
     {
+        if (!_preserveWhitespace)
+        {
+            var xml = textReader.ReadToEnd();
+            using (var prescanSource = new StringReader(xml))
+                _mixedContent = PrescanMixedContent(prescanSource);
+            textReader = new StringReader(xml);
+        }
         var settings = new XmlReaderSettings
         {
-            IgnoreWhitespace = !_preserveWhitespace,
+            // Whitespace is always read; ParseElement decides what to strip (phoenixml#130).
+            IgnoreWhitespace = false,
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
@@ -202,9 +232,25 @@ public sealed class XmlDocumentParser
     /// <exception cref="System.Xml.XmlException">The XML content is not well-formed.</exception>
     public ParseResult Parse(Stream stream, string? documentUri = null)
     {
+        if (!_preserveWhitespace)
+        {
+            // Two passes (see PrescanMixedContent): a seekable stream is read again from where
+            // it started; any other stream is copied once.
+            if (!stream.CanSeek)
+            {
+                var copy = new MemoryStream();
+                stream.CopyTo(copy);
+                copy.Position = 0;
+                stream = copy;
+            }
+            var start = stream.Position;
+            _mixedContent = PrescanMixedContent(stream);
+            stream.Position = start;
+        }
         var settings = new XmlReaderSettings
         {
-            IgnoreWhitespace = !_preserveWhitespace,
+            // Whitespace is always read; ParseElement decides what to strip (phoenixml#130).
+            IgnoreWhitespace = false,
             IgnoreComments = false,
             IgnoreProcessingInstructions = false,
             DtdProcessing = DtdProcessing.Parse,
@@ -222,6 +268,7 @@ public sealed class XmlDocumentParser
 
     private ParseResult ParseInternal(XmlReader reader, string? documentUri)
     {
+        _elementOrdinal = 0;
         var lineInfo = reader as System.Xml.IXmlLineInfo;
         var documentNodeId = AllocateNodeId();
         var documentChildren = new List<NodeId>();
@@ -302,6 +349,8 @@ public sealed class XmlDocumentParser
         var localName = reader.LocalName;
         var prefix = string.IsNullOrEmpty(reader.Prefix) ? null : reader.Prefix;
         var isEmpty = reader.IsEmptyElement;
+        var mixedContent = _mixedContent is { } mixed && _elementOrdinal < mixed.Count && mixed[_elementOrdinal];
+        _elementOrdinal++;
 
         // Detect xs:ID-typed simple-content elements. An element's content is ID-typed when:
         // - the schema type (or its simple-type datatype) has XmlTypeCode.Id (xs:ID or derived), OR
@@ -386,6 +435,9 @@ public sealed class XmlDocumentParser
             System.Text.StringBuilder? runBuilder = null;
             var runLine = 0;
             var runCol = 0;
+            // Whether the run may be stripped: no CDATA section in it, and no part of it under
+            // xml:space="preserve".
+            var runStrippable = true;
 
             void AppendRun(string value)
             {
@@ -402,9 +454,17 @@ public sealed class XmlDocumentParser
 
             void FlushRun()
             {
-                if (runBuilder is { Length: > 0 })
+                // PreserveWhitespace=false strips a whitespace-only text node only in element-only
+                // content (indentation between elements). Whitespace in mixed content (an element
+                // that also has non-whitespace text) and under xml:space="preserve" (XML 1.0
+                // §2.10) is data, and is kept. XmlReaderSettings.IgnoreWhitespace dropped every
+                // whitespace-only span: <p>a <b>b</b> <i>c</i></p> read back as "a bc"
+                // (phoenixml#130).
+                if (runBuilder is { Length: > 0 }
+                    && !(runStrippable && !_preserveWhitespace && !mixedContent && IsXmlWhitespace(runBuilder)))
                     children.Add(CreateTextNode(runBuilder.ToString(), nodeId, runLine, runCol));
                 runBuilder = null;
+                runStrippable = true;
             }
 
             while (reader.Read())
@@ -424,20 +484,15 @@ public sealed class XmlDocumentParser
 
                     case XmlNodeType.Text:
                     case XmlNodeType.CDATA:
-                        // Text/CDATA are always significant character data (CDATA is a
-                        // serialization detail, not a distinct node kind in XDM) — accumulate.
-                        AppendRun(reader.Value);
-                        break;
-
                     case XmlNodeType.Whitespace:
                     case XmlNodeType.SignificantWhitespace:
-                        // Whitespace-only spans join the run only when preserving. When stripping
-                        // (_preserveWhitespace == false) they are dropped AND transparent to the
-                        // run: they neither contribute text nor break an adjacent Text/CDATA run.
-                        // This keeps the pre-coalescing stripping behaviour while still honouring
-                        // the XDM "no adjacent text nodes" invariant if a strip creates adjacency.
-                        if (_preserveWhitespace)
-                            AppendRun(reader.Value);
+                        // All character data joins the run (CDATA is a serialization detail, not
+                        // a node kind in XDM); FlushRun decides whether a whitespace-only run is
+                        // stripped. A CDATA section is never stripped: its whitespace was written
+                        // as data on purpose.
+                        if (reader.NodeType == XmlNodeType.CDATA || reader.XmlSpace == XmlSpace.Preserve)
+                            runStrippable = false;
+                        AppendRun(reader.Value);
                         break;
 
                     case XmlNodeType.Comment:
@@ -614,6 +669,81 @@ public sealed class XmlDocumentParser
 
         AddNode(attribute);
         return nodeId;
+    }
+
+    /// <summary>
+    /// The first of two passes when whitespace is stripped: for each element in document order
+    /// (start-tag order, as <see cref="ParseElement"/> counts them), whether it has a text child
+    /// with a non-whitespace character. A whitespace-only text node is stripped only from an
+    /// element that has none (element-only content), and that is known only at the end tag. The
+    /// node must be decided before it gets a node id: ids are allocated in document order, they
+    /// give document order, and they are contiguous (a store advances by
+    /// <see cref="ParseResult.NodeCount"/>). So the decision cannot wait for the end tag.
+    /// </summary>
+    private static List<bool> PrescanMixedContent(TextReader source)
+    {
+        using var reader = XmlReader.Create(source, PrescanSettings());
+        return PrescanMixedContent(reader);
+    }
+
+    private static List<bool> PrescanMixedContent(Stream source)
+    {
+        using var reader = XmlReader.Create(source, PrescanSettings());
+        return PrescanMixedContent(reader);
+    }
+
+    private static XmlReaderSettings PrescanSettings() => new()
+    {
+        IgnoreWhitespace = false,
+        IgnoreComments = true,
+        IgnoreProcessingInstructions = true,
+        DtdProcessing = DtdProcessing.Parse, // entity references expand as in the main pass
+        MaxCharactersFromEntities = 1_000_000,
+        ValidationType = ValidationType.None,
+        CloseInput = false,
+    };
+
+    private static List<bool> PrescanMixedContent(XmlReader reader)
+    {
+        var mixed = new List<bool>();
+        var open = new Stack<int>(); // ordinals of the elements whose content is being read
+        while (reader.Read())
+        {
+            switch (reader.NodeType)
+            {
+                case XmlNodeType.Element:
+                    mixed.Add(false);
+                    if (!reader.IsEmptyElement)
+                        open.Push(mixed.Count - 1);
+                    break;
+                case XmlNodeType.EndElement:
+                    open.Pop();
+                    break;
+                case XmlNodeType.Text:
+                case XmlNodeType.CDATA:
+                    if (open.Count > 0 && !IsXmlWhitespace(reader.Value))
+                        mixed[open.Peek()] = true;
+                    break;
+            }
+        }
+        return mixed;
+    }
+
+    private static bool IsXmlWhitespace(string value)
+    {
+        foreach (var c in value)
+            if (c is not (' ' or '\t' or '\r' or '\n'))
+                return false;
+        return true;
+    }
+
+    private static bool IsXmlWhitespace(System.Text.StringBuilder value)
+    {
+        foreach (var chunk in value.GetChunks())
+            foreach (var c in chunk.Span)
+                if (c is not (' ' or '\t' or '\r' or '\n'))
+                    return false;
+        return true;
     }
 
     /// <summary>
