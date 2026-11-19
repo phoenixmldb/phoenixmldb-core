@@ -74,9 +74,11 @@ public sealed class IndexConfiguration
     /// Adds a name index that speeds up element and attribute name lookups.
     /// </summary>
     /// <param name="namespaceUri">
-    /// Namespace URI to restrict the index to, or <c>null</c> to index names in all namespaces.
+    /// Namespace name to restrict the index to, or <c>null</c> to index names in all namespaces.
     /// Pass <c>null</c> (the default) unless you want to limit indexing to a specific namespace
-    /// for storage efficiency.
+    /// for storage efficiency. The name is kept exactly as given: a namespace name is compared as a
+    /// string, so <c>http://example.com</c> and <c>http://example.com/</c> are different namespaces.
+    /// An empty string is the same as <c>null</c>.
     /// </param>
     /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
     /// <remarks>
@@ -88,8 +90,10 @@ public sealed class IndexConfiguration
     /// </remarks>
     public IndexConfiguration AddNameIndex(string? namespaceUri = null)
     {
-        var uri = string.IsNullOrEmpty(namespaceUri) ? null : new Uri(namespaceUri);
-        _indexes.Add(new NameIndexDefinition { NamespaceUri = uri });
+        // Kept as the string it is. It was made a System.Uri, which normalizes: "http://example.com"
+        // became "http://example.com/", so the index never matched elements in that namespace
+        // (phoenixml#141).
+        _indexes.Add(new NameIndexDefinition { NamespaceName = string.IsNullOrEmpty(namespaceUri) ? null : namespaceUri });
         return this;
     }
 
@@ -274,9 +278,16 @@ public sealed class IndexConfiguration
     public IReadOnlyList<IndexDefinition> Indexes => _indexes;
     public bool StructuralIndexEnabled => _structuralIndexEnabled;
 
+    /// <summary>
+    /// Adds a name index for the namespace whose name is the original string of
+    /// <paramref name="namespaceUri"/> (<see cref="Uri.OriginalString"/>), not its normalized form.
+    /// </summary>
+    /// <param name="namespaceUri">The namespace, or <c>null</c> to index names in all namespaces.</param>
+    /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
     public IndexConfiguration AddNameIndex(Uri? namespaceUri = null)
     {
-        _indexes.Add(new NameIndexDefinition { NamespaceUri = namespaceUri });
+        var name = namespaceUri?.OriginalString;
+        _indexes.Add(new NameIndexDefinition { NamespaceName = string.IsNullOrEmpty(name) ? null : name });
         return this;
     }
 }
@@ -353,7 +364,26 @@ public abstract record IndexDefinition;
 /// <seealso cref="IndexConfiguration.AddNameIndex(string?)"/>
 public record NameIndexDefinition : IndexDefinition
 {
-    public Uri? NamespaceUri { get; init; }
+    /// <summary>
+    /// The namespace name the index is restricted to, exactly as it was given, or <c>null</c> for
+    /// names in all namespaces. Namespace names compare as strings (codepoint by codepoint): no
+    /// normalization is applied, and any non-empty string is accepted.
+    /// </summary>
+    public string? NamespaceName { get; init; }
+
+    /// <summary>
+    /// The namespace as a <see cref="Uri"/>. Obsolete: a <see cref="Uri"/> normalizes its text
+    /// (<c>http://example.com</c> becomes <c>http://example.com/</c>), and a namespace name must not
+    /// change. Reads and writes <see cref="NamespaceName"/> through <see cref="Uri.OriginalString"/>;
+    /// the getter is <c>null</c> for a name that is not a URI reference.
+    /// </summary>
+    [Obsolete("Use NamespaceName. A Uri normalizes the namespace name (it adds a trailing slash, for example); NamespaceUri maps to NamespaceName through Uri.OriginalString and will be removed in the next major version.")]
+    public Uri? NamespaceUri
+    {
+        get => NamespaceName is null ? null
+            : Uri.TryCreate(NamespaceName, UriKind.RelativeOrAbsolute, out var uri) ? uri : null;
+        init => NamespaceName = string.IsNullOrEmpty(value?.OriginalString) ? null : value.OriginalString;
+    }
 }
 
 /// <summary>
