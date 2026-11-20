@@ -25,8 +25,11 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
+          # SDK 11 builds (global.json); the 8 and 10 runtimes run the older targets' tests.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
 
       - name: Resolve and guard version
         id: version
@@ -95,6 +98,40 @@ jobs:
           name: nuget-packages
           path: ./artifacts/*.nupkg
 
+  # The same build and tests on SDK 10. global.json pins SDK 11; this job repoints it, so the
+  # projects build net8.0;net10.0 alone (Directory.Build.props adds net11.0 only on SDK 11). It proves
+  # those builds need nothing from SDK 11, and that a host still on SDK 10 can build.
+  build-sdk10:
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON(vars.LINUX_RUNS_ON || '"ubuntu-latest"') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Select SDK 10
+        run: |
+          python3 - <<'PY'
+          import json
+          g = json.load(open("global.json"))
+          g["sdk"] = {"version": "10.0.100", "rollForward": "latestFeature"}
+          json.dump(g, open("global.json", "w"), indent=2)
+          PY
+          dotnet --version
+          case "$(dotnet --version)" in 10.*) ;; *) echo "::error::expected SDK 10"; exit 1 ;; esac
+
+      - name: Build
+        run: |
+          dotnet build src/PhoenixmlDb.Core -c Release
+
+      - name: Test
+        run: |
+          dotnet test tests/PhoenixmlDb.Core.Tests -c Release
+          dotnet test tests/PhoenixmlDb.Xdm.Tests -c Release
+
   # The serializer wrote Environment.NewLine (CRLF on Windows) when indenting, and nothing ran
   # this suite on Windows, so a whole class of per-OS byte differences could not fail CI. Same
   # job as the engine repos' test-windows; it gates publish.
@@ -105,10 +142,11 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
+          # SDK 11 builds (global.json); the 8 and 10 runtimes run the older targets' tests.
           dotnet-version: |
             8.0.x
             10.0.x
-          dotnet-quality: 'preview'
+            11.0.x
 
       - name: Test
         run: |
@@ -121,7 +159,7 @@ jobs:
     # phoenixmldb-xslt keeps tests in a separate job and had to be gated explicitly, and the
     # same edit was briefly applied here, referencing a `test` job that does not exist and
     # breaking the workflow file. Two repos, two shapes.
-    needs: [build, test-windows]
+    needs: [build, test-windows, build-sdk10]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON(vars.LINUX_RUNS_ON || '"ubuntu-latest"') }}
     permissions:
@@ -136,8 +174,11 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
+          # SDK 11 builds (global.json); the 8 and 10 runtimes run the older targets' tests.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
 
       - name: Login to NuGet via trusted publisher
         id: nuget-login
