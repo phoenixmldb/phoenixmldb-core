@@ -3,10 +3,6 @@ using Xunit;
 
 namespace PhoenixmlDb.Core.Tests;
 
-// CA2234 asks for the Uri overload of AddNameIndex, even though that overload is [Obsolete]; the
-// string overload is the one that keeps a namespace name unchanged (phoenixml#141).
-#pragma warning disable CA2234
-
 // The Uri overload of AddNameIndex and the NamespaceUri property are obsolete; the tests that pin
 // their mapping to NamespaceName use them on purpose.
 #pragma warning disable CS0618
@@ -42,6 +38,14 @@ public class NameIndexNamespaceNameTests
     [Fact]
     public void A_relative_name_is_accepted()
         => NameOf(new IndexConfiguration().AddNameIndex(new Uri("my-ns", UriKind.Relative))).Should().Be("my-ns");
+
+    [Fact]
+    public void No_argument_is_all_namespaces()
+        => NameOf(new IndexConfiguration().AddNameIndex()).Should().BeNull();
+
+    [Fact]
+    public void The_namespace_name_may_be_given_by_name()
+        => NameOf(new IndexConfiguration().AddNameIndex(namespaceName: "urn:a")).Should().Be("urn:a");
 
     [Theory]
     [InlineData(null)]

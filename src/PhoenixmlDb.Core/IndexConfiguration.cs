@@ -73,7 +73,7 @@ public sealed class IndexConfiguration
     /// <summary>
     /// Adds a name index that speeds up element and attribute name lookups.
     /// </summary>
-    /// <param name="namespaceUri">
+    /// <param name="namespaceName">
     /// Namespace name to restrict the index to, or <c>null</c> to index names in all namespaces.
     /// Pass <c>null</c> (the default) unless you want to limit indexing to a specific namespace
     /// for storage efficiency. The name is kept exactly as given: a namespace name is compared as a
@@ -88,12 +88,12 @@ public sealed class IndexConfiguration
     /// every node in every document to find matching names.
     /// </para>
     /// </remarks>
-    public IndexConfiguration AddNameIndex(string? namespaceUri = null)
+    public IndexConfiguration AddNameIndex(string? namespaceName = null)
     {
         // Kept as the string it is. It was made a System.Uri, which normalizes: "http://example.com"
         // became "http://example.com/", so the index never matched elements in that namespace
         // (phoenixml#141).
-        _indexes.Add(new NameIndexDefinition { NamespaceName = string.IsNullOrEmpty(namespaceUri) ? null : namespaceUri });
+        _indexes.Add(new NameIndexDefinition { NamespaceName = string.IsNullOrEmpty(namespaceName) ? null : namespaceName });
         return this;
     }
 
@@ -287,7 +287,7 @@ public sealed class IndexConfiguration
     /// <param name="namespaceUri">The namespace, or <c>null</c> to index names in all namespaces.</param>
     /// <returns>This <see cref="IndexConfiguration"/> instance for fluent chaining.</returns>
     [Obsolete("Use AddNameIndex(string). A namespace name is a string; this overload stores Uri.OriginalString and will be removed in the next major version.")]
-    public IndexConfiguration AddNameIndex(Uri? namespaceUri = null)
+    public IndexConfiguration AddNameIndex(Uri? namespaceUri)
     {
         var name = namespaceUri?.OriginalString;
         _indexes.Add(new NameIndexDefinition { NamespaceName = string.IsNullOrEmpty(name) ? null : name });
