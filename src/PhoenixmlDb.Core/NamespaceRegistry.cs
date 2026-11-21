@@ -27,6 +27,7 @@ public static class NamespaceRegistry
         (NamespaceId.PhoenixmlMeta,"https://schemas.phoenixml.dev/2026/meta",      "dbxml"),
         (NamespaceId.DcTerms,      "http://purl.org/dc/terms/",                    "dcterms"),
         (NamespaceId.PhoenixmlFunctions, "https://schemas.phoenixml.dev/2026/functions", "phx"),
+        (NamespaceId.XQueryLocal,  "http://www.w3.org/2005/xquery-local-functions", "local"),
     ];
 
     private static readonly Dictionary<string, NamespaceId> ByUri =
