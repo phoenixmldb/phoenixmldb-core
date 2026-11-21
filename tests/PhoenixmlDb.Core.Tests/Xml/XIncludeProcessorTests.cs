@@ -14,6 +14,11 @@ namespace PhoenixmlDb.Core.Tests.Xml;
 /// </summary>
 public sealed class XIncludeProcessorTests : IDisposable
 {
+    // These tests check what xpath1() selects, not how fast. The default limit (5 s of wall time)
+    // made them fail on a slow CI runner; the limit itself is tested in XPointerEvaluatorTests
+    // with a deliberately slow expression and a 1 ms limit.
+    private static readonly XIncludeOptions NoXPathTimeLimit = new() { MaxXPathEvalMilliseconds = 600_000 };
+
     private const string XiNs = "http://www.w3.org/2001/XInclude";
 
     private readonly string _dir =
@@ -445,7 +450,7 @@ public sealed class XIncludeProcessorTests : IDisposable
         var master = LoadMaster(
             $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(//x)\"/></m>");
 
-        var result = XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+        var result = XIncludeProcessor.Expand(master, masterUri, NoXPathTimeLimit);
 
         var xs = result.SelectNodes("/m/x")!;
         xs.Count.Should().Be(2);
@@ -461,7 +466,7 @@ public sealed class XIncludeProcessorTests : IDisposable
         var master = LoadMaster(
             $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(/doc/@a)\"/></m>");
 
-        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+        var act = () => XIncludeProcessor.Expand(master, masterUri, NoXPathTimeLimit);
 
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }
@@ -492,7 +497,7 @@ public sealed class XIncludeProcessorTests : IDisposable
         var master = LoadMaster(
             $"<m xmlns:xi=\"{XiNs}\"><xi:include href=\"parts.xml\" xpointer=\"xpath1(/)\"/></m>");
 
-        var act = () => XIncludeProcessor.Expand(master, masterUri, new XIncludeOptions());
+        var act = () => XIncludeProcessor.Expand(master, masterUri, NoXPathTimeLimit);
 
         act.Should().Throw<XIncludeException>().Which.Kind.Should().Be(XIncludeErrorKind.MalformedInclude);
     }

@@ -82,7 +82,10 @@ public sealed class XIncludeLimitsTests
             $"<root xmlns:xi='{ns}'><src>{open}<hit/>{close}</src>" +
             "<xi:include xpointer=\"xpath1(//hit)\"/></root>");
 
-        var result = XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"), new XIncludeOptions());
+        // Any limit above 0 takes the large-stack route this test is about; a large one keeps the
+        // result independent of the runner's speed.
+        var result = XIncludeProcessor.Expand(master, new System.Uri("file:///m.xml"),
+            new XIncludeOptions { MaxXPathEvalMilliseconds = 600_000 });
 
         result.SelectNodes("/root/hit")!.Count.Should().Be(1);
     }
