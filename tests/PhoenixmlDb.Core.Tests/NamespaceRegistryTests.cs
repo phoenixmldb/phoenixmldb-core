@@ -7,6 +7,7 @@ public class NamespaceRegistryTests
 {
     [Theory]
     [InlineData(13, "https://schemas.phoenixml.dev/2026/functions", "phx")]
+    [InlineData(14, "http://www.w3.org/2005/xquery-local-functions", "local")]
     [InlineData(11, "https://schemas.phoenixml.dev/2026/meta", "dbxml")]
     [InlineData(12, "http://purl.org/dc/terms/",               "dcterms")]
     [InlineData(3,  "http://www.w3.org/2001/XMLSchema",        "xs")]
@@ -68,4 +69,19 @@ public class NamespaceRegistryTests
     [Fact]
     public void EachConventionalPrefix_NamesOneNamespace()
         => NamespaceRegistry.WellKnown.Select(NamespaceRegistry.GetConventionalPrefix).Should().OnlyHaveUniqueItems();
+
+    [Fact]
+    public void EveryReservedId_IsUnique_AndBelowFirstUserNamespaceId()
+    {
+        // Every public static NamespaceId property of NamespaceId is a reserved id (None and the
+        // retired 9 included): no two may share a value, and none may reach the user range.
+        var reserved = typeof(NamespaceId)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(p => p.PropertyType == typeof(NamespaceId))
+            .Select(p => (p.Name, Id: (NamespaceId)p.GetValue(null)!))
+            .ToList();
+        reserved.Should().HaveCountGreaterThan(14);
+        reserved.Select(r => r.Id.Value).Should().OnlyHaveUniqueItems();
+        reserved.Should().OnlyContain(r => r.Id.Value < NamespaceId.FirstUserNamespaceId);
+    }
 }

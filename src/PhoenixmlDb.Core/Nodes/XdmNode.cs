@@ -295,6 +295,50 @@ public abstract class XdmNode
     /// </remarks>
     public string? CopySourceBaseUri { get; set; }
 
+    private IXdmNodeStore? _store;
+
+    /// <summary>
+    /// The store that holds this node, or <c>null</c> when no store has attached it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The node's <see cref="NodeId"/>s (children, attributes, parent) and its name's
+    /// <see cref="NamespaceId"/> are resolved in this store. A node that no store attached is
+    /// resolved in the store the engine works in, as before this property existed.
+    /// </para>
+    /// <para>
+    /// The node keeps its store reachable: a caller that keeps a node keeps the store and every
+    /// node in it. This is what lets the node stay navigable after the query or transformation
+    /// that made it has finished.
+    /// </para>
+    /// </remarks>
+    public IXdmNodeStore? Store => Volatile.Read(ref _store);
+
+    /// <summary>
+    /// Attaches this node to the store that holds it. A store calls this once for each node it
+    /// holds.
+    /// </summary>
+    /// <param name="store">The store that holds this node.</param>
+    /// <remarks>
+    /// The attachment is set once and is safe on several threads at once. Attaching the node to
+    /// the store it is already attached to does nothing.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="store"/> is <c>null</c>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The node is already attached to another store. One node object cannot belong to two
+    /// stores: its ids would be resolved in the wrong one. Copy the node into the second store
+    /// instead.
+    /// </exception>
+    public void AttachStore(IXdmNodeStore store)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        var previous = Interlocked.CompareExchange(ref _store, store, null);
+        if (previous != null && !ReferenceEquals(previous, store))
+            throw new InvalidOperationException(
+                $"Node {Id} is already attached to another node store ({previous.GetType().Name}); "
+                + $"it cannot also be attached to {store.GetType().Name}. Copy the node into that store instead.");
+    }
+
     /// <summary>
     /// The value key that totally orders and identifies this node in XDM document order:
     /// the pair <c>(TreeOrdinal, Id)</c>.

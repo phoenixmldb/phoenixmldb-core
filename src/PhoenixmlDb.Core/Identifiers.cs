@@ -282,6 +282,14 @@ public readonly record struct NamespaceId(uint Value) : IComparable<NamespaceId>
     public static NamespaceId PhoenixmlFunctions => new(13);
 
     /// <summary>
+    /// The XQuery local-functions namespace (<c>http://www.w3.org/2005/xquery-local-functions</c>),
+    /// conventionally bound to the <c>local</c> prefix. Reserved so that function names and nodes
+    /// share one namespace id space: the XQuery function library used 4 for it, which is
+    /// <see cref="Xsi"/> here.
+    /// </summary>
+    public static NamespaceId XQueryLocal => new(14);
+
+    /// <summary>
     /// The first namespace ID available for user-defined namespaces. IDs below this value
     /// (0-99) are reserved for system and standard namespaces.
     /// </summary>
