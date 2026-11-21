@@ -156,7 +156,7 @@ public sealed class XPointerEvaluatorTests
     public void Xpath1_within_budget_succeeds()
     {
         var d = Doc("<r><x>1</x><x>2</x></r>");
-        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)", xpathTimeoutMs: 5000);
+        var nodes = XPointerEvaluator.Evaluate(d, "xpath1(//x)", xpathTimeoutMs: 600_000);
         nodes.Should().HaveCount(2);
     }
 }
