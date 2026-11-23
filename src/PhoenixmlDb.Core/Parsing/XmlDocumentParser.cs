@@ -332,13 +332,157 @@ public sealed class XmlDocumentParser
         };
     }
 
+    /// <summary>
+    /// Parses the element the reader is on, with its content, into nodes; returns its id.
+    /// </summary>
+    /// <remarks>
+    /// One loop with an explicit stack of open elements, not a call per nesting level: the
+    /// recursive form used about 1.4 KB of stack per level, so how deep a document could be
+    /// depended on the stack of the thread that parsed it (710 levels on a 1 MB stack), and past
+    /// that it stopped with InsufficientExecutionStackException. The nodes, their ids and order,
+    /// text and whitespace (phoenixml#130), line info and namespaces are what the recursive form
+    /// gave: each element is opened (its id, attributes and namespace declarations), filled and
+    /// closed (built and added) at the same points as before.
+    /// </remarks>
     private NodeId ParseElement(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
     {
-        // One frame per nesting level: a deeply nested (untrusted) document would overflow the
-        // native stack — an uncatchable StackOverflowException that crashes the host. Throw a
-        // catchable InsufficientExecutionStackException before the stack is exhausted instead.
-        System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack();
+        var top = OpenElement(reader, parentId, lineInfo);
+        if (top.IsEmpty)
+            return CloseElement(top);
 
+        var open = new Stack<ElementFrame>();
+        open.Push(top);
+        while (reader.Read())
+        {
+            var frame = open.Peek();
+            switch (reader.NodeType)
+            {
+                case XmlNodeType.EndElement:
+                    frame.FlushRun(this);
+                    var closedId = CloseElement(open.Pop());
+                    if (open.Count == 0)
+                        return closedId;
+                    open.Peek().Children.Add(closedId);
+                    break;
+
+                case XmlNodeType.Element:
+                    frame.FlushRun(this);
+                    var child = OpenElement(reader, frame.NodeId, lineInfo);
+                    if (child.IsEmpty)
+                        frame.Children.Add(CloseElement(child));
+                    else
+                        open.Push(child);
+                    break;
+
+                case XmlNodeType.Text:
+                case XmlNodeType.CDATA:
+                case XmlNodeType.Whitespace:
+                case XmlNodeType.SignificantWhitespace:
+                    // All character data joins the run (CDATA is a serialization detail, not
+                    // a node kind in XDM); FlushRun decides whether a whitespace-only run is
+                    // stripped. A CDATA section is never stripped: its whitespace was written
+                    // as data on purpose.
+                    if (reader.NodeType == XmlNodeType.CDATA || reader.XmlSpace == XmlSpace.Preserve)
+                        frame.RunStrippable = false;
+                    frame.AppendRun(reader.Value, lineInfo);
+                    break;
+
+                case XmlNodeType.Comment:
+                    frame.FlushRun(this);
+                    frame.Children.Add(ParseComment(reader, frame.NodeId, lineInfo));
+                    break;
+
+                case XmlNodeType.ProcessingInstruction:
+                    frame.FlushRun(this);
+                    frame.Children.Add(ParseProcessingInstruction(reader, frame.NodeId, lineInfo));
+                    break;
+            }
+        }
+
+        // Defensive close: a well-formed document always ends at the outermost EndElement (handled
+        // above), but a reader that stops otherwise leaves elements open; they are closed in turn,
+        // innermost first, as the recursive form returned from each level.
+        while (true)
+        {
+            var frame = open.Pop();
+            frame.FlushRun(this);
+            var closedId = CloseElement(frame);
+            if (open.Count == 0)
+                return closedId;
+            open.Peek().Children.Add(closedId);
+        }
+    }
+
+    /// <summary>
+    /// An element being parsed: what its start tag gave, its children so far, and the run of
+    /// character data not yet made a text node.
+    /// </summary>
+    private sealed class ElementFrame
+    {
+        public NodeId NodeId;
+        public NodeId? ParentId;
+        public NamespaceId NamespaceId;
+        public string LocalName = "";
+        public string? Prefix;
+        public bool IsEmpty;
+        public bool MixedContent;
+        public bool IsIdContent;
+        public System.Xml.XmlQualifiedName? SchemaTypeQName;
+        public System.Xml.Schema.XmlSchemaType? SchemaType;
+        public List<NodeId> Attributes = null!;
+        public List<NamespaceBinding> NamespaceDecls = null!;
+        public int SourceLine;
+        public int SourceColumn;
+        public readonly List<NodeId> Children = new();
+
+        // Pending coalesced character-data run for the current sibling position. XmlReader raises
+        // a SEPARATE character-data event at every CDATA and entity boundary (e.g.
+        // "abc<![CDATA[def]]>ghi" is three events), but XDM forbids two consecutive text-node
+        // siblings, so a run of consecutive character-data events is one XdmText node. A run is
+        // broken only by an element, comment, or PI (or the end tag). The source line/column are
+        // captured from the FIRST event contributing to the run.
+        private System.Text.StringBuilder? _runBuilder;
+        private int _runLine;
+        private int _runCol;
+        // Whether the run may be stripped: no CDATA section in it, and no part of it under
+        // xml:space="preserve".
+        public bool RunStrippable = true;
+
+        public void AppendRun(string value, System.Xml.IXmlLineInfo? lineInfo)
+        {
+            if (value.Length == 0)
+                return;
+            if (_runBuilder is null)
+            {
+                _runBuilder = new System.Text.StringBuilder(value.Length);
+                _runLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
+                _runCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
+            }
+            _runBuilder.Append(value);
+        }
+
+        public void FlushRun(XmlDocumentParser parser)
+        {
+            // PreserveWhitespace=false strips a whitespace-only text node only in element-only
+            // content (indentation between elements). Whitespace in mixed content (an element
+            // that also has non-whitespace text) and under xml:space="preserve" (XML 1.0
+            // §2.10) is data, and is kept. XmlReaderSettings.IgnoreWhitespace dropped every
+            // whitespace-only span: <p>a <b>b</b> <i>c</i></p> read back as "a bc"
+            // (phoenixml#130).
+            if (_runBuilder is { Length: > 0 }
+                && !(RunStrippable && !parser._preserveWhitespace && !MixedContent && IsXmlWhitespace(_runBuilder)))
+                Children.Add(parser.CreateTextNode(_runBuilder.ToString(), NodeId, _runLine, _runCol));
+            _runBuilder = null;
+            RunStrippable = true;
+        }
+    }
+
+    /// <summary>
+    /// What the start tag the reader is on gives: the element's id (allocated here, before its
+    /// attributes'), name, schema type, attributes and namespace declarations.
+    /// </summary>
+    private ElementFrame OpenElement(XmlReader reader, NodeId? parentId, System.Xml.IXmlLineInfo? lineInfo)
+    {
         // Capture position before MoveToFirstAttribute shifts the reader cursor.
         var sourceLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
         var sourceCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
@@ -417,101 +561,32 @@ public sealed class XmlDocumentParser
             reader.MoveToElement();
         }
 
-        // Collect children.
-        //
-        // XmlReader raises a SEPARATE character-data event at every CDATA and entity
-        // boundary (e.g. "abc<![CDATA[def]]>ghi" is three events), but XDM forbids two
-        // consecutive text-node siblings — a text node's value must be a complete run of
-        // character data. So we coalesce a run of consecutive character-data events
-        // (Text, CDATA, and, when preserving, Whitespace/SignificantWhitespace) into a
-        // SINGLE XdmText node. A run is broken only by an element, comment, or PI (or the
-        // end tag) — those are the node kinds that legitimately separate text nodes.
-        var children = new List<NodeId>();
-
-        if (!isEmpty)
+        return new ElementFrame
         {
-            // Pending coalesced character-data run for the current sibling position.
-            // The source line/column are captured from the FIRST event contributing to the run.
-            System.Text.StringBuilder? runBuilder = null;
-            var runLine = 0;
-            var runCol = 0;
-            // Whether the run may be stripped: no CDATA section in it, and no part of it under
-            // xml:space="preserve".
-            var runStrippable = true;
+            NodeId = nodeId,
+            ParentId = parentId,
+            NamespaceId = namespaceId,
+            LocalName = localName,
+            Prefix = prefix,
+            IsEmpty = isEmpty,
+            MixedContent = mixedContent,
+            IsIdContent = isIdContent,
+            SchemaTypeQName = elementSchemaTypeQName,
+            SchemaType = elementSchemaType,
+            Attributes = attributes,
+            NamespaceDecls = namespaceDecls,
+            SourceLine = sourceLine,
+            SourceColumn = sourceCol,
+        };
+    }
 
-            void AppendRun(string value)
-            {
-                if (value.Length == 0)
-                    return;
-                if (runBuilder is null)
-                {
-                    runBuilder = new System.Text.StringBuilder(value.Length);
-                    runLine = lineInfo?.HasLineInfo() == true ? lineInfo.LineNumber : 0;
-                    runCol = lineInfo?.HasLineInfo() == true ? lineInfo.LinePosition : 0;
-                }
-                runBuilder.Append(value);
-            }
-
-            void FlushRun()
-            {
-                // PreserveWhitespace=false strips a whitespace-only text node only in element-only
-                // content (indentation between elements). Whitespace in mixed content (an element
-                // that also has non-whitespace text) and under xml:space="preserve" (XML 1.0
-                // §2.10) is data, and is kept. XmlReaderSettings.IgnoreWhitespace dropped every
-                // whitespace-only span: <p>a <b>b</b> <i>c</i></p> read back as "a bc"
-                // (phoenixml#130).
-                if (runBuilder is { Length: > 0 }
-                    && !(runStrippable && !_preserveWhitespace && !mixedContent && IsXmlWhitespace(runBuilder)))
-                    children.Add(CreateTextNode(runBuilder.ToString(), nodeId, runLine, runCol));
-                runBuilder = null;
-                runStrippable = true;
-            }
-
-            while (reader.Read())
-            {
-                if (reader.NodeType == XmlNodeType.EndElement)
-                {
-                    FlushRun();
-                    break;
-                }
-
-                switch (reader.NodeType)
-                {
-                    case XmlNodeType.Element:
-                        FlushRun();
-                        children.Add(ParseElement(reader, nodeId, lineInfo));
-                        break;
-
-                    case XmlNodeType.Text:
-                    case XmlNodeType.CDATA:
-                    case XmlNodeType.Whitespace:
-                    case XmlNodeType.SignificantWhitespace:
-                        // All character data joins the run (CDATA is a serialization detail, not
-                        // a node kind in XDM); FlushRun decides whether a whitespace-only run is
-                        // stripped. A CDATA section is never stripped: its whitespace was written
-                        // as data on purpose.
-                        if (reader.NodeType == XmlNodeType.CDATA || reader.XmlSpace == XmlSpace.Preserve)
-                            runStrippable = false;
-                        AppendRun(reader.Value);
-                        break;
-
-                    case XmlNodeType.Comment:
-                        FlushRun();
-                        children.Add(ParseComment(reader, nodeId, lineInfo));
-                        break;
-
-                    case XmlNodeType.ProcessingInstruction:
-                        FlushRun();
-                        children.Add(ParseProcessingInstruction(reader, nodeId, lineInfo));
-                        break;
-                }
-            }
-
-            // Defensive flush: a well-formed document always ends the loop at EndElement (handled
-            // above), but guard against a trailing run being lost if the reader stops otherwise.
-            FlushRun();
-        }
-
+    /// <summary>Builds the element of <paramref name="frame"/> with its children, adds it, and returns its id.</summary>
+    private NodeId CloseElement(ElementFrame frame)
+    {
+        var nodeId = frame.NodeId;
+        var children = frame.Children;
+        var elementSchemaType = frame.SchemaType;
+        var elementSchemaTypeQName = frame.SchemaTypeQName;
         var elementTypeAnnotation = AnnotatorName(elementSchemaType)
             ?? ResolveSchemaTypeAnnotation(elementSchemaTypeQName, XdmTypeName.Untyped);
 
@@ -519,17 +594,17 @@ public sealed class XmlDocumentParser
         {
             Id = nodeId,
             Document = _documentId,
-            Namespace = namespaceId,
-            LocalName = localName,
-            Prefix = prefix,
-            Parent = parentId,
-            Attributes = attributes.ToImmutableArray(),
-            NamespaceDeclarations = namespaceDecls.ToImmutableArray(),
+            Namespace = frame.NamespaceId,
+            LocalName = frame.LocalName,
+            Prefix = frame.Prefix,
+            Parent = frame.ParentId,
+            Attributes = frame.Attributes.ToImmutableArray(),
+            NamespaceDeclarations = frame.NamespaceDecls.ToImmutableArray(),
             Children = children.ToImmutableArray(),
-            IsIdContent = isIdContent,
+            IsIdContent = frame.IsIdContent,
             TypeAnnotation = elementTypeAnnotation,
-            SourceLine = sourceLine,
-            SourceColumn = sourceCol
+            SourceLine = frame.SourceLine,
+            SourceColumn = frame.SourceColumn
         };
 
         // Compute string value from descendant text nodes (XDM §5.7.2).
