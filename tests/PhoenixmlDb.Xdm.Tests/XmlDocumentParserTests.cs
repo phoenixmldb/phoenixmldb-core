@@ -1028,21 +1028,58 @@ public class XmlDocumentParserTests
         act.Should().Throw<XmlException>("entity expansion must be capped, not expanded into memory");
     }
 
-    [Fact]
-    public void Parse_DeeplyNestedDocument_IsBoundedNotStackOverflow()
+    /// <summary>
+    /// How deep a document may be does not depend on the stack of the thread that parses it: the
+    /// parser keeps its open elements in a stack of its own. With one call per nesting level it used
+    /// stack for every level, and how much depended on the JIT: on a 256 KB stack it stopped at 96
+    /// levels in tier-0 code and at 339 in optimized code (on 1 MB: 711 and 2,476), with
+    /// InsufficientExecutionStackException (the guard that kept a deeper document from crashing the
+    /// host). Every case uses the same 256 KB: on Linux a new thread can get the stack of a thread that
+    /// has ended, up to four times the size it asks for (glibc), so a small-stack case after a
+    /// 1 MB-stack case could run on 1 MB.
+    /// </summary>
+    [Theory]
+    [InlineData(2_000)]
+    [InlineData(10_000)]
+    [InlineData(60_000)]
+    public void Parse_DeeplyNestedDocument_OnA256KilobyteStack_Parses(int depth)
     {
-        // XmlReader reads arbitrarily deep nesting iteratively, but ParseElement recurses one frame
-        // per level. Without a stack guard a deeply nested (untrusted) document overflows the native
-        // thread stack — an UNCATCHABLE StackOverflowException that kills the host. The guard must
-        // convert this into a catchable exception (a failing test here = a host crash).
         var sb = new System.Text.StringBuilder();
-        for (int i = 0; i < 60_000; i++) sb.Append("<a>");
-        sb.Append("<x/>");
-        for (int i = 0; i < 60_000; i++) sb.Append("</a>");
+        for (int i = 0; i < depth; i++) sb.Append("<a>");
+        sb.Append("<x>t</x>");
+        for (int i = 0; i < depth; i++) sb.Append("</a>");
+        var xml = sb.ToString();
 
-        var act = () => new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(sb.ToString());
+        ParseResult? result = null;
+        InsufficientExecutionStackException? stackError = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = new XmlDocumentParser(TestDocId, StartNodeId, ResolveNamespace).Parse(xml);
+            }
+            catch (InsufficientExecutionStackException e)
+            {
+                stackError = e;
+            }
+        }, maxStackSize: 256 * 1024);
+        thread.Start();
+        thread.Join();
 
-        act.Should().Throw<System.InsufficientExecutionStackException>();
+        stackError.Should().BeNull();
+        result.Should().NotBeNull();
+        // The document, the a elements, x and its text.
+        result!.NodeCount.Should().Be((uint)(depth + 3));
+        var byId = result.Nodes.ToDictionary(n => n.Id);
+        var text = result.Nodes.OfType<XdmText>().Should().ContainSingle().Subject;
+        text.Value.Should().Be("t");
+        // From the text up: x, every a, and the document.
+        var hops = 0;
+        for (XdmNode node = text; node.Parent is { } parent; node = byId[parent])
+            hops++;
+        hops.Should().Be(depth + 2);
+        result.Document.DocumentElement.Should().NotBeNull();
+        ((XdmElement)byId[result.Document.DocumentElement!.Value]).LocalName.Should().Be("a");
     }
 
     #endregion
