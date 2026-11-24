@@ -160,8 +160,11 @@ public class XmlSerializerRoundTripTests
     /// ended (2,000 levels on a 512 KB stack). Every case uses the same 256 KB: on Linux a new
     /// thread can get the stack of a thread that has ended, up to four times the size it asks for
     /// (glibc), so a case after a larger-stack case could run on more. With the calls per level,
-    /// 256 KB held up to about 2,200 levels in optimized code and fewer than 1,500 in tier-0 code:
-    /// 2,000 is the depth the overflow was reported at, 3,000 is past both.
+    /// 256 KB held up to about 2,200 levels in optimized code and fewer than 1,500 in tier-0 code.
+    /// Run one row per process on that serializer (a stack overflow ends the process):
+    /// 2,000 (the depth the overflow was reported at) overflowed in tier-0 code
+    /// (DOTNET_TieredCompilation=1, DOTNET_TC_CallCountThreshold=1000000) and passed in optimized
+    /// code (DOTNET_TieredCompilation=0); 3,000 and 10,000 overflowed in both.
     /// </summary>
     [Theory]
     [InlineData(2_000)]
