@@ -159,10 +159,13 @@ public class XmlSerializerRoundTripTests
     /// used the thread's stack for every level, and a deep document overflowed it: the process
     /// ended (2,000 levels on a 512 KB stack). Every case uses the same 256 KB: on Linux a new
     /// thread can get the stack of a thread that has ended, up to four times the size it asks for
-    /// (glibc), so a case after a larger-stack case could run on more.
+    /// (glibc), so a case after a larger-stack case could run on more. With the calls per level,
+    /// 256 KB held up to about 2,200 levels in optimized code and fewer than 1,500 in tier-0 code:
+    /// 2,000 is the depth the overflow was reported at, 3,000 is past both.
     /// </summary>
     [Theory]
     [InlineData(2_000)]
+    [InlineData(3_000)]
     [InlineData(10_000)]
     public void Serialize_DeeplyNestedDocument_OnA256KilobyteStack(int depth)
     {
