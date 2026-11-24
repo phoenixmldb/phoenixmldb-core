@@ -150,6 +150,54 @@ public class XmlSerializerRoundTripTests
     }
 
     // -------------------------------------------------------------------------
+    // Deep documents
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// How deep a document may be does not depend on the stack of the thread that serializes it:
+    /// the serializer keeps its open elements in a stack of its own. With one call per level it
+    /// used the thread's stack for every level, and a deep document overflowed it: the process
+    /// ended (2,000 levels on a 512 KB stack). Every case uses the same 256 KB: on Linux a new
+    /// thread can get the stack of a thread that has ended, up to four times the size it asks for
+    /// (glibc), so a case after a larger-stack case could run on more. With the calls per level,
+    /// 256 KB held up to about 2,200 levels in optimized code and fewer than 1,500 in tier-0 code.
+    /// Run one row per process on that serializer (a stack overflow ends the process):
+    /// 2,000 (the depth the overflow was reported at) overflowed in tier-0 code
+    /// (DOTNET_TieredCompilation=1, DOTNET_TC_CallCountThreshold=1000000) and passed in optimized
+    /// code (DOTNET_TieredCompilation=0); 3,000 and 10,000 overflowed in both.
+    /// </summary>
+    [Theory]
+    [InlineData(2_000)]
+    [InlineData(3_000)]
+    [InlineData(10_000)]
+    public void Serialize_DeeplyNestedDocument_OnA256KilobyteStack(int depth)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < depth; i++) sb.Append("<a>");
+        // XmlWriter writes an empty element as <e />, so the input is written that way too.
+        sb.Append("<x>t</x><e /><!--c--><?p d?>");
+        for (int i = 0; i < depth; i++) sb.Append("</a>");
+        var content = sb.ToString();
+        var (doc, nodeStore) = ParseToStore(content);
+        var serializer = CreateSerializer(nodeStore, indent: false);
+
+        string? document = null;
+        string? element = null;
+        var thread = new Thread(() =>
+        {
+            document = serializer.Serialize(doc);
+            element = serializer.Serialize(nodeStore[doc.DocumentElement!.Value]);
+        }, maxStackSize: 256 * 1024);
+        thread.Start();
+        thread.Join();
+
+        // The writer's settings keep the XML declaration, also for a single node.
+        var expected = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" + content;
+        document.Should().Be(expected);
+        element.Should().Be(expected);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

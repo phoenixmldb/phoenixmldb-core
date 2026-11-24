@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Xml;
@@ -147,13 +148,50 @@ public sealed class XmlSerializer
         writer.Flush();
     }
 
+    /// <summary>
+    /// Writes a node and its subtree. The open elements are kept in a stack of the serializer's
+    /// own, one entry per level. With one call per level, a deep document used the thread's stack
+    /// for every level, and on a small stack it overflowed and ended the process (2,000 levels on
+    /// 512 KB). The writer calls and their order are the same as with the calls per level.
+    /// </summary>
     private void SerializeNode(XmlWriter writer, XdmNode node)
+    {
+        if (!WriteStart(writer, node, out var children))
+            return;
+        var open = new Stack<OpenNode>();
+        open.Push(new OpenNode(children, node is XdmElement, 0));
+        while (open.Count > 0)
+        {
+            var current = open.Pop();
+            if (current.Next == current.Children.Count)
+            {
+                if (current.IsElement)
+                    writer.WriteEndElement();
+                continue;
+            }
+            open.Push(current with { Next = current.Next + 1 });
+            var child = _nodeResolver(current.Children[current.Next]);
+            if (child != null && WriteStart(writer, child, out var grandchildren))
+                open.Push(new OpenNode(grandchildren, child is XdmElement, 0));
+        }
+    }
+
+    /// <summary>An element or document whose children are being written, and the next child.</summary>
+    private readonly record struct OpenNode(IReadOnlyList<NodeId> Children, bool IsElement, int Next);
+
+    /// <summary>
+    /// Writes a text, comment or processing instruction node, or an element's start tag, namespace
+    /// declarations and attributes. True, with the children, for an element or a document: its
+    /// children follow, and an element's end tag after them.
+    /// </summary>
+    private bool WriteStart(XmlWriter writer, XdmNode node, out IReadOnlyList<NodeId> children)
     {
         switch (node)
         {
             case XdmElement element:
-                SerializeElement(writer, element);
-                break;
+                WriteStartElement(writer, element);
+                children = element.Children;
+                return true;
 
             case XdmText text:
                 writer.WriteString(text.Value);
@@ -168,14 +206,11 @@ public sealed class XmlSerializer
                 break;
 
             case XdmDocument document:
-                foreach (var childId in document.Children)
-                {
-                    var child = _nodeResolver(childId);
-                    if (child != null)
-                        SerializeNode(writer, child);
-                }
-                break;
+                children = document.Children;
+                return true;
         }
+        children = Array.Empty<NodeId>();
+        return false;
     }
 
     /// <summary>
@@ -198,7 +233,7 @@ public sealed class XmlSerializer
         public override Encoding Encoding => Encoding.UTF8;
     }
 
-    private void SerializeElement(XmlWriter writer, XdmElement element)
+    private void WriteStartElement(XmlWriter writer, XdmElement element)
     {
         var namespaceUri = _namespaceResolver(element.Namespace) ?? string.Empty;
         var prefix = element.Prefix;
@@ -243,15 +278,5 @@ public sealed class XmlSerializer
                     writer.WriteAttributeString(attr.LocalName, attr.Value);
             }
         }
-
-        // Write children
-        foreach (var childId in element.Children)
-        {
-            var child = _nodeResolver(childId);
-            if (child != null)
-                SerializeNode(writer, child);
-        }
-
-        writer.WriteEndElement();
     }
 }
